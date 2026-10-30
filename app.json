@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "FinSight",
+    "slug": "finsight-mobile",
+    "scheme": "finsight",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-asset"
+    ],
+    "android": {
+      "package": "com.finsight.mobile"
+    }
+  }
+}
