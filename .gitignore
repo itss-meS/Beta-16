@@ -1,0 +1,22 @@
+﻿# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Trained model (large binary - regenerate with train.py)
+models/
+
+# Generated outputs (regenerate with train.py / evaluate.py)
+outputs/
+
+# Processed data (regenerate with prepare_data.py)
+data/processed/
+
+# Feedback / user corrections (user-specific)
+data/feedback/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
