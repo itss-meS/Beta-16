@@ -1,0 +1,6 @@
+Model,MAE (TND),RMSE (TND),WAPE (%),sMAPE (%),R2 Score,Mean Bias (TND)
+Ensemble (Weighted Blend),90.82,214.46,28.77,30.19,0.7828,-0.38
+HistGradientBoosting,111.68,271.65,35.38,35.87,0.6515,-41.42
+Baseline: Budget Target,114.73,377.22,36.35,30.86,0.3279,-71.98
+RandomForest,140.47,392.56,44.5,31.44,0.2722,15.64
+Ridge,153.03,369.86,48.48,77.06,0.3539,38.42
