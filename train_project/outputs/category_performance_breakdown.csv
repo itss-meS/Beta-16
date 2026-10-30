@@ -1,0 +1,15 @@
+Category,Historical_Mean (TND),Ensemble_MAE (TND),Ensemble_RMSE (TND),Ensemble_WAPE (%),Budget_MAE (TND),MAE_Improvement_vs_Budget (%),Predictability_Tier
+Rent,750.0,16.19,19.29,2.16,0.0,0.0,Very High
+Utilities,214.83,30.07,37.38,14.0,0.0,0.0,Very High
+Shopping & Clothing,422.04,80.31,99.24,19.03,174.1,53.9,High
+Entertainment & Leisure,100.22,19.26,26.31,19.22,14.67,-31.3,High
+Health & Wellness,198.3,40.87,45.99,20.61,36.33,-12.5,High
+Personal Care,168.65,35.89,46.5,21.28,48.65,26.2,High
+Subscriptions & Digital,28.0,6.48,6.75,23.15,0.0,0.0,High
+Education & Self-Dev,297.59,74.51,84.42,25.04,97.72,23.8,High
+Transport,99.19,24.89,30.13,25.09,62.48,60.2,High
+Food & Groceries,392.39,118.91,137.92,30.3,123.56,3.8,Volatile/Seasonal
+Gifts & Social,307.9,110.91,163.94,36.02,79.57,-39.4,Volatile/Seasonal
+Restaurants & Cafés,103.51,37.93,41.07,36.65,44.83,15.4,Volatile/Seasonal
+Travel & Holidays,1145.31,568.02,739.78,49.6,853.64,33.5,Volatile/Seasonal
+Savings & Investment,191.0,107.25,156.14,56.15,70.67,-51.8,Volatile/Seasonal
