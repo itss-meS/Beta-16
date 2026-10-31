@@ -14,7 +14,10 @@
     "export:schema": "tsx scripts/export-schema.ts",
     "export:plugin": "tsx scripts/export-plugin.ts",
     "cap:sync": "npm run build && cap sync android",
-    "golden": "python3 ml/reference/generate_golden.py"
+    "golden": "python3 ml/reference/generate_golden.py",
+    "mobile:start": "cd mobile && npx expo start",
+    "mobile:android": "cd mobile && npx expo start --android",
+    "mobile:lint": "cd mobile && npm run lint"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",

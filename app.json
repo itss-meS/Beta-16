@@ -1,18 +1,17 @@
 {
   "expo": {
-    "name": "FinSight",
-    "slug": "finsight-mobile",
-    "scheme": "finsight",
+    "name": "CashCompass",
+    "slug": "cashcompass-mobile",
+    "scheme": "cashcompass",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "plugins": [
-      "expo-router",
-      "expo-asset"
+      "expo-router"
     ],
     "android": {
-      "package": "com.finsight.mobile"
+      "package": "com.cashcompass.mobile"
     }
   }
 }
