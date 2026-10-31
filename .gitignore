@@ -1,26 +1,21 @@
-﻿# Python virtual environment
+node_modules/
+dist/
+coverage/
+.vite/
 .venv/
 __pycache__/
 *.pyc
-*.pyo
-
-# Trained model (large binary - regenerate with train.py)
-models/
-
-# Generated outputs (regenerate with train.py / evaluate.py)
-outputs/
-
-# Processed data (regenerate with prepare_data.py)
-data/processed/
-
-# Feedback / user corrections (user-specific)
-data/feedback/
-
-# OS / editor noise
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/local.properties
+android/*.jks
+android/*.keystore
+ml/data/raw/
+ml/.dvc/cache
+.idea/
 .DS_Store
-Thumbs.db
 *.log
-node_modules/
-.expo/
-dist/
-web-build/
