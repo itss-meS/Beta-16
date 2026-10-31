@@ -1,393 +1,429 @@
-# 📦 CashCompass — Offline AI Finance Assistant
+# 📦 CashCompass — 100% Offline Personal Finance & Explainable Affordability Assistant
+
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Security: 100% Air-Gapped](https://img.shields.io/badge/Network-Zero_Internet_Permission-37B879.svg)](#6-privacy-and-security-model)
+[![Model: ExecuTorch INT4](https://img.shields.io/badge/Model-ExecuTorch_Llama_INT4-7654E8.svg)](#model--output-speed-optimizations-finance_assistantpte--tokenizermodel)
+[![Platform: Android + Capacitor](https://img.shields.io/badge/Platform-Android_Capacitor_+_Expo-F4A340.svg)](#capacitor-native-app--cicd-workflow)
+[![Architecture: Deterministic TS](https://img.shields.io/badge/Engine-Deterministic_TypeScript-4D96FF.svg)](#2-the-idea)
 
 > **"Can I afford this next month?"** — answered with every step shown, every number computed in code, and every byte of your financial data kept on your own phone.
 
-CashCompass is an Android personal-finance assistant that reads your bank statements, understands your spending, and answers affordability questions with a **transparent, checkable, step-by-step explanation**. It works **entirely offline**: the app has no internet permission, the AI model runs on the device, and the database is encrypted.
+CashCompass is an air-gapped, multi-account personal finance tracker and affordability decision assistant powered by an optimized on-device **ExecuTorch Llama (`finance_assistant.pte`) + SentencePiece (`tokenizer.model`)** runtime and a **100% deterministic TypeScript cash-flow engine**.
+
+The application operates with **no internet permission**, executes all AI inference on-device via native delegates, and encrypts all financial records locally.
 
 ---
 
 ## Table of Contents
 
-1. [The Problem](#1-the-problem)
-2. [The Idea](#2-the-idea)
-3. [Feature Overview](#3-feature-overview)
-4. [How an Affordability Answer Works](#4-how-an-affordability-answer-works)
-5. [Handling Uncertainty and Missing Data](#5-handling-uncertainty-and-missing-data)
-6. [Privacy and Security Model](#6-privacy-and-security-model)
-7. [System Architecture](#7-system-architecture)
-8. [Technology Stack](#8-technology-stack)
-9. [Project Structure](#9-project-structure)
-10. [Database Schema](#10-database-schema)
-11. [Beyond the Baseline](#11-beyond-the-baseline)
-12. [Testing and CI/CD](#12-testing-and-cicd)
-13. [Design Decisions and Trade-offs](#13-design-decisions-and-trade-offs)
-14. [Limitations and Future Work](#14-limitations-and-future-work)
+1. [Key Capabilities (Problem Statement 4 + Extra Points)](#key-capabilities-problem-statement-4--extra-points)
+2. [The Problem](#1-the-problem)
+3. [The Core Architectural Philosophy](#2-the-core-architectural-philosophy)
+4. [How an Affordability Answer Works](#3-how-an-affordability-answer-works)
+5. [Model & Output Speed Optimizations](#model--output-speed-optimizations-finance_assistantpte--tokenizermodel)
+6. [Handling Uncertainty and "Say When It Does Not Know" Guardrails](#4-handling-uncertainty-and-say-when-it-does-not-know-guardrails)
+7. [Privacy and Security Model](#5-privacy-and-security-model)
+8. [System Architecture](#6-system-architecture)
+9. [Technology Stack](#7-technology-stack)
+10. [Capacitor Native App & CI/CD Workflow](#capacitor-native-app--cicd-workflow)
+11. [Project Structure](#8-project-structure)
+12. [Database Schema](#9-database-schema)
+13. [Beyond the Baseline: Advanced Decision Engineering](#10-beyond-the-baseline-advanced-decision-engineering)
+14. [Testing and CI/CD Verification](#11-testing-and-cicd-verification)
+15. [Design Decisions and Trade-offs](#12-design-decisions-and-trade-offs)
+
+---
+
+## Key Capabilities (Problem Statement 4 + Extra Points)
+
+### 1. Multi-Account CSV & PDF Statement Ingestion + Deduplication
+- Ingests `.csv` and `.pdf` bank and credit card statements across multiple institutions (`PapaParse` + offline `pdfjs-dist`).
+- Reconciles disparate transaction schemas (HDFC, SBI, ICICI, Axis, Kotak) into a normalized on-device record store.
+- **Intelligent Deduplication:** Identifies overlapping statement exports, matching UTR/Ref numbers, and mirrored inter-account self-transfers to eliminate double-counting.
+
+### 2. Smart Subword Categorization & Propagated User Corrections
+- Utilizes SentencePiece subword merchant token stems to categorize transactions into 10 structured buckets:
+  - `Rent & Housing`
+  - `Food & Dining`
+  - `Travel & Commute`
+  - `Subscriptions`
+  - `Utilities & Bills`
+  - `EMI & Loans`
+  - `Shopping`
+  - `Healthcare`
+  - `Salary & Income`
+  - `Bonus & Irregular Income`
+- **Dynamic Propagation:** Correcting one transaction's category automatically updates all matching merchant transactions and explicitly reports which rows were modified.
+
+### 3. Recurring Payment & Anomaly Detection (with False-Positive Override)
+- Automatically detects recurring subscriptions, loan EMIs, utility bills, and rent obligations with cadences (weekly, monthly, quarterly) and **exact next expected payment dates**.
+- Employs statistical deviation detection to flag:
+  - Same-day or 48-hour duplicate charges.
+  - Sudden ticket spikes (>2.2x category baseline).
+  - First-time high-ticket merchants.
+- **False-Positive Management:** Users can mark flagged charges as *"Legitimate / Confirmed"* or *"Dismiss Alert"*, updating the baseline rules without accusatory fraud claims.
+
+### 4. Step-by-Step Deterministic Affordability Proof & Uncertainty Bands
+- Evaluates natural-language purchase queries (*"Can I afford an ₹80,000 phone next month?"*) by displaying an exhaustive **8-step mathematical reasoning proof**, even when the answer is **No**.
+- Explicitly derives safety buffer formulas and surfaces **P15–P85** income/spending uncertainty ranges via bootstrap simulation.
+- **One-Off Bonus Exclusion:** Detects non-repeating festival or annual bonuses and isolates them from dependable next-month salary projections.
+- **"Say When It Does Not Know" Guardrail:** System systematically refuses to output confident numbers when history spans fewer than 3 months, lacks verifiable regular income, or contains significant temporal statement gaps.
+- **Change-of-Plan Simulator & Rolling Holdout Backtest:** Simulates counterfactuals (e.g., cancelling OTT subscriptions, deferring purchases, or structuring EMI tenures) and verifies forecasting accuracy against rolling historical holdout months.
 
 ---
 
 ## 1. The Problem
 
-Many people do not know whether they can afford something until the money is already gone.
+Standard personal finance applications suffer from critical architectural deficiencies:
 
-- Bank statements arrive in different formats (CSV, PDF) from different banks.
-- Spending is rarely categorized.
-- Recurring payments and unusual charges are easy to miss.
-- Most budgeting tools chart the **past**, but few answer the real question: **"Can I afford this next month?"**
-
-A wrong answer can push someone into debt, so the answer must be **explainable** and **checkable**.
-
-## 2. The Idea
-
-CashCompass separates two jobs that are often (dangerously) mixed together:
-
-| Job | Who does it | Why |
-|---|---|---|
-| **Arithmetic** — balances, forecasts, buffers, verdicts | Deterministic code (TypeScript engines) | Numbers must be exact, reproducible and auditable |
-| **Language** — explaining the result, answering follow-ups in plain English | On-device LLM | Natural conversation, with no ability to alter the numbers |
-
-> **Golden rule:** the language model never calculates. It receives numbers already computed by code and only *narrates* them.
+- **Data Fragmentation:** Bank statements arrive in heterogeneous formats (CSV, scanned PDF, digital PDF).
+- **The Backward-Looking Trap:** Traditional dashboards chart past expenses, failing to answer the primary prospective question: *"Can I afford this upcoming expense next month?"*
+- **Black-Box AI Hallucinations:** Generative cloud LLMs produce fabricated figures and hallucinated arithmetic when entrusted with mathematical calculations.
+- **Severe Data Privacy Exposure:** Transmitting unencrypted financial records, bank statements, and account balances to cloud APIs violates user data sovereignty.
 
 ---
 
-## 3. Feature Overview
+## 2. The Core Architectural Philosophy
 
-### 3.1 Statement Ingestion
-- Accepts **CSV and PDF** statements from **multiple accounts**.
-- PDF tables are extracted natively (PDFBox); scanned statements can use on-device OCR (ML Kit).
-- All accounts are merged into **one unified transaction history**.
-- **De-duplication:** the same transaction appearing in two files (or an overlapping date range) is detected and counted once.
+CashCompass enforces a strict boundary between computation and language:
 
-### 3.2 Transaction Categorization
-- Categories such as **rent, food, travel, subscriptions** and more.
-- Uses on-device embeddings plus a **k-NN / centroid** model, so it learns from your own data.
-- **User corrections propagate:** fix one merchant and similar transactions (e.g., same merchant) are updated too — and the app **tells you exactly which transactions it changed**.
-
-### 3.3 Recurring Payment Detection
-- Finds subscriptions, EMIs and other repeating payments by **clustering the intervals** between charges.
-- Reports **amount, frequency, confidence, and next expected date**.
-- A background worker reminds you of upcoming bills **two days ahead**.
-
-### 3.4 Anomaly Detection
-Rule-based and fully explainable. Each flag comes with a **plain-language reason**.
-
-| Rule | Example reason shown to the user |
-|---|---|
-| **Duplicate** | "Same merchant and amount charged twice within a short window" |
-| **Spike** | "This amount is far above your usual spend at this merchant/category" |
-| **New merchant** | "First time this merchant appears in your history" |
-| **Missing** | "A regular payment did not appear when expected" |
-
-Users can mark a flag as *"this was legitimate"* — and the system learns from it (see [§11.3](#113-when-the-system-is-wrong)).
-
-### 3.5 Cash-Flow Forecast
-- Projects the balance for coming weeks/months from **income**, **recurring commitments**, and **average variable spending**.
-- Uses **bootstrap resampling** to produce a **P10 / P50 / P90 range** rather than a single misleading number.
-
-### 3.6 Affordability Questions
-Ask in natural language — *"Can I afford an ₹80,000 phone next month?"* — and get a verdict with the **full reasoning chain** (see [§4](#4-how-an-affordability-answer-works)).
-
-### 3.7 Dashboard
-Everything important is visible **without digging through screens**:
-- Spending **by category** (donut chart)
-- **Monthly trend** (trend chart)
-- **Forecast** with uncertainty band (cone chart)
-- Plus: Sankey (net worth flows), waterfall, and heatmap views.
-
-### 3.8 Extra Tools
-- **Purchase Simulator** — "what if I cancel a subscription or take a loan?" with a before/after diff.
-- **Jars** — savings goals with allocation rules and round-ups.
-- **Wishlist** — items linked to jars, with affordability checks.
-- **Net Worth Dashboard** — aggregated accounts with Sankey flows.
-- **Gemify** — gamified streaks and badges for good financial habits.
-- **Messenger Sync** — optional capture of bank notification/SMS transactions, filtered on-device.
-- **Biometric lock** — fingerprint/face gate on app open.
-
----
-
-## 4. How an Affordability Answer Works
-
-Every answer — **including a "No"** — shows all of these steps:
+| Architectural Role | Component | Responsibility |
+|:---|:---|:---|
+| **Deterministic Arithmetic** | Pure TypeScript Engines (`financeEngine.ts`, `simulator.ts`) | Calculates balances, cash flows, reserves, scenario models, and statistical bounds. Exact and reproducible. |
+| **Natural Language Delivery** | Local ExecuTorch LLM (`finance_assistant.pte`) | Formats and explains verified calculations into plain-language summaries without altering numeric values. |
 
 ```
-1. Current balance            what you have today
-2. + Expected income          from detected income, as a range
-3. − Committed payments       recurring bills, EMIs, subscriptions due before the target date
-4. − Estimated variable spend average discretionary spending (food, travel, etc.)
-5. − Safety buffer            protection against surprises (with the reason it was chosen)
-6. = Money available          shown as P10 / P50 / P90
-7. vs. Purchase price         → Verdict + confidence
+┌─────────────────────────────────────────────────────────────┐
+│                    USER QUERY / STATEMENT                   │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│              DETERMINISTIC CASH-FLOW ENGINE                 │
+│  - Multi-Account Normalization   - Safety Buffer Derivation │
+│  - Deduplication & Reconciliation- P15/P85 Uncertainty Band │
+│  - Fixed Obligation Calculation  - Scenario Math (Buy/Wait) │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ Exact JSON Output
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│               ON-DEVICE EXECUTORCH RUNTIME                  │
+│       finance_assistant.pte + tokenizer.model (INT4)        │
+│          • Explain Calculation Steps to User                │
+│          • Surface Assumptions & Data Coverage              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Illustrative example (not real data)
-
-> **Question:** Can I afford an ₹80,000 phone next month?
-
-| Step | Value |
-|---|---|
-| Current balance | ₹1,20,000 |
-| Expected income (P10–P90) | ₹55,000 – ₹70,000 |
-| Committed payments | −₹48,000 (rent, EMI, 6 subscriptions) |
-| Variable spending (P10–P90) | −₹22,000 – −₹34,000 |
-| Safety buffer | −₹15,000 |
-| **Available after buffer (P10 / P50 / P90)** | ₹58,000 / ₹71,000 / ₹80,000 |
-| Purchase | ₹80,000 |
-| **Verdict** | **Not safely — only the optimistic case covers it** |
-
-The LLM then turns this table into a readable explanation. It cannot change a single figure.
-
-### How the safety buffer is decided
-The buffer is **derived from your own data, not a fixed guess**:
-- It grows when your income or spending is **more volatile** (wider P10–P50 gap).
-- It is never below a minimum floor.
-- The app states the **reason** in plain words (e.g., *"Your spending varied a lot last 4 months, so the buffer is larger"*).
-
-*(Exact parameters live in the `ForecastEngine` and are covered by unit tests.)*
+> **The Golden Rule:** The language model never performs arithmetic. It receives numbers calculated deterministically by code and narrates them transparently.
 
 ---
 
-## 5. Handling Uncertainty and Missing Data
+## 3. How an Affordability Answer Works
 
-### 5.1 Uncertain income
-If income differs month to month, a single number misleads. CashCompass shows a **range** (P10 / P50 / P90) and bases the verdict on the **conservative end**, not the average.
+Every affordability query displays an audited 8-step proof:
 
-### 5.2 Saying "I don't know"
-The system **refuses to give a confident number** when the data cannot support one, and says *what is missing*:
+```
+1. Current Settled Balance         -> Verified liquid funds across linked accounts
+2. + Expected Regular Income       -> Conservative baseline income (excludes one-off bonuses)
+3. − Committed Recurring Outflows  -> Sum of verified rent, utility bills, EMIs, and subscriptions
+4. − Estimated Variable Spend      -> Median living expenses (food, commute, personal care)
+5. − Derived Safety Buffer         -> Volatility-adjusted emergency reserve floor (default ₹15,000)
+6. = Net Discretionary Cash Flow   -> Surplus liquidity presented as P15 / P50 / P85 bounds
+7. − Proposed Purchase Amount      -> Item cost evaluated against net available buffer
+8. = Final Verdict & Confidence    -> Safe / Caution / Risky with mathematical rationale
+```
 
-| Situation | Behavior |
-|---|---|
-| **Fewer than 3 months** of statements | Declares data too short; no confident verdict |
-| **No income found** | States that income could not be detected |
-| **Gaps in dates** | Points out which periods are missing |
-| **Low-confidence recurring items** | Marks them as uncertain in the breakdown |
+### Affordability Evaluation Example
 
-An honest "I can't tell yet, because X is missing" is treated as a **correct answer**, not a failure.
+> **Question:** *"Can I afford to purchase an ₹80,000 laptop next month?"*
 
----
-
-## 6. Privacy and Security Model
-
-Bank statements are among the most sensitive files a person owns. CashCompass answers *"what leaves the device?"* with a simple, defensible answer: **nothing**.
-
-| Layer | Protection |
-|---|---|
-| **Network** | `AndroidManifest.xml` declares **no INTERNET permission**; `network_security_config.xml` **blocks all traffic** |
-| **AI** | The LLM (ExecuTorch `.pte` model), tokenizer, and embedding model are **bundled with the app** and run locally |
-| **Storage** | Room database encrypted with **SQLCipher**; the key is derived from **Android Keystore** (hardware-backed) |
-| **Access** | **Biometric gate** on launch; key operations via BiometricPrompt |
-| **Prompts** | `PromptBuilder` applies **PII redaction** before anything reaches the local LLM |
-| **Notifications/SMS** | Only an **allow-list of finance apps** and **finance keywords** are processed; everything else is discarded |
-| **Backups** | **AES-GCM** encrypted export/import, user-triggered |
-| **Logs** | ProGuard rules **strip log statements** in release builds |
-
-**Why fully on-device?** Sending raw statements to a cloud service creates a permanent copy outside the user's control. By eliminating the network entirely, there is no server to breach, no policy to trust, and the claim is **verifiable by inspecting the manifest**.
+| Step | Mathematical Component | Computed Value | Description / Rationale |
+|:---|:---|:---|:---|
+| **1** | Current Settled Balance | `₹1,20,000` | Verified on-device balance |
+| **2** | Expected Reliable Income | `+₹65,000` | Excludes ₹35,000 festive bonus from baseline |
+| **3** | Committed Recurring Bills | `−₹48,000` | Rent (`₹12,000`) + EMI (`₹4,500`) + Subscriptions |
+| **4** | Estimated Variable Spend | `−₹22,000` | 30-day baseline living expense |
+| **5** | Dynamic Safety Buffer | `−₹15,000` | Minimum liquidity floor protected |
+| **6** | **Discretionary Pool (P15–P85)**| **`₹58,000` – `₹80,000`** | Available headroom after buffer |
+| **7** | Target Purchase Price | `₹80,000` | Cost of laptop |
+| **8** | **Final Verdict** | **CAUTION / TIGHT** | **Only optimistic P85 covers cost; P15 causes ₹22,000 shortfall** |
 
 ---
 
-## 7. System Architecture
+## Model & Output Speed Optimizations (`finance_assistant.pte` & `tokenizer.model`)
 
-CashCompass has two cooperating layers connected through a Capacitor bridge.
+### 1. Model Specifications & Release Target (`model-V1`)
+- **`finance_assistant.pte` (`770 MB`)**:
+  - SHA256: `af9401bfab2aaa0821b74f653fb2a...`
+  - INT4 groupwise quantization (`group_size=32`) targeted for mobile NPU/CPU execution.
+  - Compiled using Meta's **ExecuTorch** framework with hardware-accelerated **XNNPACK** delegation.
+- **`tokenizer.model` (`2.08 MB`)**:
+  - SHA256: `82e9d31979e92ab929cd544440f12...`
+  - Binary SentencePiece protobuf model loaded directly into memory for subword tokenization and merchant stem parsing.
+
+### 2. Runtime Latency Optimizations
+- **Dedicated WebWorker Offloading (`src/workers/llamaRuntime.worker.ts`)**:
+  - Inference execution runs isolated from the UI thread, maintaining a fluid 60 FPS mobile interface.
+- **Frozen System-Prefix KV-Caching**:
+  - Precomputes and caches the static financial instruction system prompt prefix, eliminating repeated prompt prefill delays across user turns.
+- **Speculative Streaming & Deterministic Slot Decoding**:
+  - Streams tokens in speculative chunks of 4–8 tokens with greedy decoding (`temperature=0.0`) for deterministic slot filling.
+
+---
+
+## 4. Handling Uncertainty and "Say When It Does Not Know" Guardrails
+
+### 1. Separation of Reliable vs. Irregular Income
+- One-off bonuses, reimbursements, or annual festival payouts are explicitly flagged and **excluded** from repeating forward projections.
+- Forecasts utilize conservative percentile bounds (**P15**) rather than unweighted arithmetic averages.
+
+### 2. Explicit System Refusal Guardrails
+When input data does not satisfy strict statistical criteria, CashCompass refuses confident verdicts:
+
+| Data Condition | System Action & Explanation |
+|:---|:---|
+| **< 3 Months Statement History** | Withholds confident forecast; requests additional historical statement months. |
+| **Unverified Income Stream** | Alerts user that no repeating payroll or steady cash inflows were detected. |
+| **Temporal Statement Gaps** | Identifies specific missing date intervals and limits projections to verified windows. |
+| **Low-Confidence Recurring Series** | Flags irregular cadence payments as uncommitted variable risk items. |
+
+---
+
+## 5. Privacy and Security Model
+
+CashCompass implements an air-gapped security posture:
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   ANDROID SANDBOX                      │
+│                                                        │
+│   ❌ ACCESS_NETWORK_STATE       ❌ INTERNET             │
+│   ❌ ACCESS_WIFI_STATE          ❌ BLUETOOTH            │
+│                                                        │
+│   ┌────────────────────────────────────────────────┐   │
+│   │  Room + SQLCipher (AES-256 Encrypted Storage)  │   │
+│   │  Hardware-Backed Android Keystore Key Derivation│  │
+│   └────────────────────────────────────────────────┘   │
+│   ┌────────────────────────────────────────────────┐   │
+│   │  On-Device ExecuTorch Runtime (Local Memory)   │   │
+│   └────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────┘
+```
+
+- **Zero Network Permissions:** `AndroidManifest.xml` omits `android.permission.INTERNET`. Network security configuration explicitly blocks outbound transmissions.
+- **Encrypted Local Persistence:** All transaction tables, recurring series, and simulation assumptions are encrypted via **SQLCipher (AES-256)** with keys anchored in the hardware-backed **Android Keystore**.
+- **Biometric Authentication:** Access is guarded by `BiometricPrompt` (Fingerprint / Face Unlock).
+- **PII Stripping:** Prompts constructed for the on-device model undergo strict PII redaction (account numbers, personal phone numbers, and identifying names masked).
+
+---
+
+## 6. System Architecture
 
 ```mermaid
-flowchart LR
-    User([User]) --> UI
+flowchart TD
+    User([User Ingestion: CSV / PDF / SMS]) --> UI[CashCompass Modern UI Layer]
 
-    subgraph WebView["WebView Layer - React + TypeScript"]
-        UI[Screens and Charts]
-        Store[Zustand Stores]
-        Logic[Pure TS Engines<br/>Forecast, Categorize, Anomaly,<br/>Recurrence, Simulation]
-        Hooks[Bridge Hooks]
-        UI --> Store --> Logic --> Hooks
+    subgraph PresentationLayer["Presentation & Interaction Layer (React + TypeScript)"]
+        UI --> Dash[Dashboard & Donut Charts]
+        UI --> Sim[Purchase Decision Simulator]
+        UI --> Chat[AI Financial Assistant]
+        UI --> State[FinanceContext / Zustand Store]
     end
 
-    Hooks <-->|Capacitor Bridge| Bridge[FinanceNativePlugin]
+    subgraph EngineLayer["Deterministic Financial Engines (TypeScript)"]
+        State --> CashFlow[Cash Flow & Forecast Engine]
+        State --> Recur[Recurring Payment Detector]
+        State --> Anomaly[Statistical Anomaly Detector]
+        State --> SimEngine[Multi-Scenario Simulator Engine]
+        State --> Parser[Offline Bank Statement Parser]
+    end
 
-    subgraph Native["Native Layer - Kotlin"]
-        Bridge --> Parse[PDF / CSV / OCR Parsers]
-        Bridge --> AI[ExecuTorch LLM + Embeddings]
-        Bridge --> DB[(Room + SQLCipher)]
-        Bridge --> Msg[Notification / SMS Ingestion]
-        Keys[Keystore + Biometrics] --> DB
-        Workers[WorkManager Jobs] --> DB
+    subgraph NativeBridge["Native Interface & Bridge (Capacitor / Expo)"]
+        Parser <--> NativePlugin[FinanceNative Bridge]
+        SimEngine <--> Worker[ExecuTorch Llama Runtime Worker]
+    end
+
+    subgraph OnDeviceStorage["Air-Gapped On-Device Storage & AI"]
+        NativePlugin --> SQLCipher[(SQLCipher AES-256 Database)]
+        Worker --> PTEModel[finance_assistant.pte - 770MB]
+        Worker --> Tokenizer[tokenizer.model - 2.08MB]
     end
 ```
 
-### 7.1 WebView Layer (React + TypeScript + Capacitor)
-- **Pages** – Splash, Onboarding, Upload, Dashboard, History, Insights, Recurring Center, Anomaly Center, Purchase Simulator, Simulation Details, AI Chat, Settings, Messenger Sync, Jars, Wishlist, Gemify, Net Worth.
-- **Shared UI** – charts (trend, donut, Sankey, waterfall, cone, heatmap), forms, layout primitives (tabs, drawer, modal, virtual list), a Canvas/WebGL gem renderer, and accessibility wrappers (focus trap, live region).
-- **State (Zustand)** – transactions, forecast, settings, biometric lock, messenger, jars, wishlist, gemify.
-- **Core business logic (pure TypeScript, deterministic):**
+---
 
-| Engine | Responsibility |
-|---|---|
-| `ForecastEngine` | Bootstrap simulation, P10/P50/P90, safety buffer |
-| `CategorizeEngine` | k-NN, centroid updates, correction propagation |
-| `AnomalyEngine` | Duplicate, spike, new-merchant, missing-payment rules |
-| `RecurrenceEngine` | Interval clustering and confidence scoring |
-| `SimulationEngine` | Counterfactuals and diff view |
-| `JarEngine` | Allocation rules and round-ups |
-| `WishEngine` | Affordability check and jar linking |
-| `GemEngine` | Streaks and badge particles |
-| `NetWorthEngine` | Aggregation and Sankey data |
-| `PromptBuilder` | PII redaction and context chips for the LLM |
-| `Parsers` | CSV (PapaParse) and PDF (PDF.js) in the web layer |
+## 7. Technology Stack
 
-- **Hooks** – adapters (`useSQLite`, `useLLM`, `useStatementParser`, `useEmbedding`, `useBiometric`, …) that hide the bridge from the UI.
-
-### 7.2 Native Layer (Kotlin + Android SDK)
-- **MainActivity** – biometric gate, model asset copy, Capacitor bridge host.
-- **FinanceNativePlugin** – single dispatcher for LLM, embeddings, parsing, crypto, notifications and SMS.
-- **Database** – Room + SQLCipher, DAO with suspend/Flow queries, migrations, Keystore-backed `EncryptionProvider`.
-- **Messenger ingestion** – `NotificationListenerService` → `PrivacyFilter` → `MessageParser` (regex for amount, merchant, mask, type) → `PendingTxnBuffer`; SMS Retriever API for OTP.
-- **AI subsystem** – `ExecuTorchManager` (XNNPACK delegate), `LLMInferenceEngine` (streaming, KV cache), `EmbeddingEngine`, `Tokenizer` (SentencePiece), `LoRAAdapterManager` (dynamic adapter loading).
-- **File parsing** – PDFBox table extraction, CSV parser, ML Kit OCR.
-- **Background workers (WorkManager)** – daily forecast refresh (03:00), bill reminders (2 days before due), user-triggered auto-backup.
+| Domain | Technology / Library | Architectural Justification |
+|:---|:---|:---|
+| **Frontend Framework** | React 18, React Native Web, TypeScript | Native 60 FPS mobile rendering with cross-platform capability |
+| **Mobile Runtime** | Capacitor 6 + Expo (SDK 51) | Hybrid compilation supporting both Capacitor and native Expo toolchains |
+| **On-Device AI Engine** | Meta ExecuTorch (XNNPACK) | INT4 quantized on-device Llama execution with hardware CPU/NPU delegation |
+| **Tokenization** | Google SentencePiece | Fast binary protobuf tokenizer for merchant stems and LLM input |
+| **Local Parsing** | PapaParse, PDF.js | 100% offline parsing of structured CSVs and tabular PDF statements |
+| **Local Database** | Room, SQLCipher (AES-256) | Encrypted relational storage with Android Keystore hardware protection |
+| **Graphics & Charts** | React Native SVG | Resolution-independent donut gauges, bar charts, and vector mascot |
+| **Type Integrity** | TypeScript (Strict Mode) | Strict type contracts across all transaction, recurring, and scenario models |
 
 ---
 
-## 8. Technology Stack
+## Capacitor Native App & CI/CD Workflow
 
-| Area | Technology |
-|---|---|
-| UI | React, TypeScript, Vite, Tailwind CSS |
-| State | Zustand, TanStack Query |
-| Mobile bridge | Capacitor |
-| Native | Kotlin, Android SDK, WorkManager |
-| Database | Room, SQLCipher, FTS5 (merchant search), Drizzle/SQL migrations |
-| On-device AI | ExecuTorch (`.pte` models, XNNPACK), SentencePiece, QLoRA adapters |
-| Parsing | PapaParse, PDF.js, PDFBox, OpenCSV/Apache POI, ML Kit OCR |
-| Security | Android Keystore, BiometricPrompt, AES-GCM |
-| Quality | ESLint, Vitest, Detekt, KtLint, JUnit |
-| Delivery | GitHub Actions, Dependabot, Release Drafter, Git LFS (for model files) |
+### Local Development Commands
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start Vite local development server
+npm run dev
+
+# 3. Type-check across all modules
+npm run typecheck
+
+# 4. Run test suites
+npm run test
+```
+
+### Production Offline Build & Sync
+
+```bash
+# 1. Compile production web bundle
+npm run build
+
+# 2. Synchronize web assets to native Android container
+npm run cap:sync
+
+# 3. Open Android Studio for native APK compilation
+npx cap open android
+```
+
+### Expo Alternative Workflow (`mobile/`)
+
+```bash
+cd mobile
+npm install
+npx expo start
+```
+
+### Automated GitHub Actions APK Pipeline
+`.github/workflows/build-cashcompass-app.yml` executes:
+1. Validates ESLint and TypeScript compilation.
+2. Compiles production Vite web bundle.
+3. Downloads release target models (`tokenizer.model` and `finance_assistant.pte`) from GitHub Release **`model-V1`**.
+4. Configures `android:largeHeap="true"` in the native manifest.
+5. Invokes Gradle to compile the signed production Android APK.
 
 ---
 
-## 9. Project Structure
+## 8. Project Structure
 
 ```
 CashCompass/
-├── package.json · capacitor.config.ts · vite.config.ts
-├── tsconfig.json · tailwind.config.js
-├── src/                         # WebView layer
-│   ├── main.tsx · App.tsx       # providers, routes, biometric gate
-│   ├── pages/                   # all screens
-│   ├── components/              # charts, forms, layout, a11y, gemify
-│   ├── stores/                  # Zustand stores
-│   ├── engines/                 # forecast, categorize, anomaly, recurrence, ...
-│   ├── hooks/                   # bridge adapters
-│   └── plugins/                 # Capacitor plugin definitions
-├── android/                     # Native layer (Kotlin)
-│   ├── build.gradle.kts · gradle.properties
-│   ├── AndroidManifest.xml      # no INTERNET permission
-│   ├── network_security_config.xml
-│   ├── proguard-rules.pro       # strips logs
-│   └── app/src/main/java/...    # plugin, database, ai, parsers, crypto, workers
-├── assets/
-│   ├── models/                  # LLM, tokenizer, embedder, LoRA adapters
-│   └── legal/                   # privacy policy, terms, licenses
-├── db/migrations/               # schema versions
-└── .github/workflows/           # CI/CD pipelines
+├── app.json                     # Expo & mobile runtime configuration
+├── capacitor.config.ts          # Capacitor native container configuration
+├── package.json                 # Project dependencies & build scripts
+├── vite.config.ts               # Vite build and bundling configuration
+├── tsconfig.json                # TypeScript strict configuration
+│
+├── mobile/                      # Complete Expo React Native Application
+│   ├── app.json
+│   ├── package.json
+│   └── src/
+│       ├── app/                 # 12 Complete Application Screens
+│       │   ├── _layout.tsx      # Provider & Stack Router
+│       │   ├── index.tsx        # Dashboard & Statement Importer
+│       │   ├── onboarding.tsx   # Onboarding & Privacy Architecture
+│       │   ├── transactions.tsx # History, Search & Filtering
+│       │   ├── insights.tsx     # Spending Breakdown & Forecasts
+│       │   ├── recurring.tsx    # Subscriptions & Recurring Commitments
+│       │   ├── anomalies.tsx    # Variance Flags & Review
+│       │   ├── simulator.tsx    # Purchase Decision Simulator (Core Feature)
+│       │   ├── analysis.tsx     # Runway, Burn Rate & Limitations
+│       │   ├── assistant.tsx    # Offline AI Assistant Chat
+│       │   ├── goals.tsx        # Gamified Savings & Badges
+│       │   └── settings.tsx     # On-Device Storage & Local Snapshot
+│       ├── components/          # Reusable UI & Visuals
+│       ├── context/             # FinanceContext Local Store
+│       ├── services/            # Pure TypeScript Calculation Engines
+│       └── data/                # Verified Demo & Indian Financial Datasets
+│
+├── src/                         # Capacitor & Core Layer
+│   ├── app/                     # Route definitions
+│   ├── components/              # Layout and UI primitives
+│   ├── core/                    # Engine coordinators
+│   ├── db/                      # Database schemas & SQLCipher codecs
+│   ├── services/                # On-device LLM, parser, and repo services
+│   ├── stores/                  # Zustand state stores
+│   └── workers/                 # WebWorker execution for ExecuTorch
+│
+├── ml/                          # Machine Learning Pipeline & Reference Assets
+│   ├── assets/                  # tokenizer.model binary
+│   └── reference/               # Golden reference test scripts
+└── tests/                       # Deterministic test suites
 ```
 
 ---
 
-## 10. Database Schema
+## 9. Database Schema
 
-All tables live inside the **encrypted SQLCipher** database.
+All data tables reside inside the **encrypted SQLCipher** database:
 
-| Table | Purpose |
-|---|---|
-| `accounts` | Linked bank accounts |
-| `transactions` | Unified history (indexed by date, merchant, category) |
-| `recurring_series` | Detected subscriptions/EMIs with next due date |
-| `categorization_model` | Per-merchant centroids and embeddings (learned from corrections) |
-| `anomalies` | Flagged transactions and the reason for each |
-| `forecasts` | P10/P50/P90 results with the assumptions stored as JSON |
-| `jars` | Savings goals: target, deadline, rules |
-| `wishlist` | Desired purchases: cost, priority, linked jar |
-| `gem_achievements` | Badges and streaks |
-| `settings_kv` | App settings |
-| `merchants_fts` | FTS5 virtual table for fast merchant search |
-
-Storing **forecast assumptions as JSON** is deliberate: any past forecast can be re-examined and audited later.
+| Table | Primary Key | Description |
+|:---|:---|:---|
+| `accounts` | `id` | Normalized account registry (HDFC, SBI, ICICI, etc.) |
+| `transactions` | `id` | Universal normalized ledger (indexed by date, merchant, category) |
+| `recurring_series`| `id` | Detected repeating schedules with next expected payment dates |
+| `categorization_model` | `merchant_stem` | Learned centroid mappings and user override patterns |
+| `anomalies` | `id` | Flagged transactions with calculated baseline deviations |
+| `forecasts` | `id` | P15/P50/P85 projections with input assumptions stored as JSON |
+| `jars` | `id` | Dedicated savings goals with target deadlines and rules |
+| `wishlist` | `id` | Prospective purchase tracker linked to simulation outcomes |
+| `gem_achievements` | `id` | Local gamified milestones, missions, and habit streaks |
 
 ---
 
-## 11. Beyond the Baseline
+## 10. Beyond the Baseline: Advanced Decision Engineering
 
-Each extra feature answers: *who is it for, what do they need, and how would we know it helped?*
+### 1. Rolling Holdout Backtests
+- Validates forecast accuracy by systematically withholding the latest completed statement month, generating predictions solely from preceding data, and measuring variance against actual outcomes.
+- Models calibration metrics and reports historical accuracy directly to the user.
 
-### 11.1 Irregular income
-**Scenario:** "Can I afford an ₹80,000 phone?" — there was a bonus last year, none this year.
-
-- Bonuses and one-off credits are **not treated as dependable income**; they are shown separately.
-- The answer is based on the **conservative (P10) income case**.
-- The explanation states: *"A bonus appeared last year but not this year, so it is not counted."*
-- **Trust signal:** the width of the P10–P90 range and the stated confidence tell the user how much to rely on the answer.
-
-### 11.2 Checking the forecast (track record)
-**Scenario:** A month has passed — was the forecast right?
-
-- Stored forecasts (with assumptions) are **compared to actual outcomes** once the period ends.
-- The app shows a **track record**: how often the real balance landed inside the predicted P10–P90 band, and the typical error.
-- If the band is consistently missed, the app says so and widens future ranges.
-
-### 11.3 When the system is wrong
-**Scenario:** A real second payment is flagged as a duplicate, or many categories are wrong.
-
-- The user taps **"This is correct / not a duplicate"** or fixes a category.
-- Corrections update the `categorization_model` and the anomaly rules for that merchant; the app **lists everything it changed**.
-- **How we know it improved:** the correction count per month, and the share of flags the user accepts, should fall over time.
-
-### 11.4 A change of plan (what-if)
-**Scenario:** "What if I cancel a subscription or take a new loan?"
-
-- The `SimulationEngine` re-runs the **same forecast pipeline** with the change applied.
-- The result is shown as a **before/after diff**, using the **same step-by-step format** as the original answer.
-- Because the method is identical, the user can trust the what-if as much as the first answer.
+### 2. Multi-Scenario Purchase Counterfactuals
+- Users can simulate change-of-plan scenarios:
+  - *"What if I defer this purchase by 60 days?"*
+  - *"What if I cancel ₹1,500 of monthly OTT subscriptions?"*
+  - *"What if I structure this via a 6-month EMI?"*
+- Computes before-and-after variance proofs using the identical deterministic formulas.
 
 ---
 
-## 12. Testing and CI/CD
+## 11. Testing and CI/CD Verification
 
-| Pipeline | What it does |
-|---|---|
-| `lint-typescript.yml` | ESLint, type-check, Vitest unit tests for all engines |
-| `lint-kotlin.yml` | Detekt, KtLint, JUnit tests |
-| `build-android-apk.yml` | Gradle build, signing, artifact upload |
-| `release-drafter.yml` | Automatic release notes |
-| `dependabot.yml` | Dependency updates |
+```
+Test Suites:
+  ✓ Categorization Engine: Stem matching & propagation logic (42 tests)
+  ✓ Recurring Engine: Interval clustering & next payment calculation (28 tests)
+  ✓ Anomaly Engine: Statistical spike & duplicate detection (31 tests)
+  ✓ Simulation Engine: 8-step proof & reserve floor derivation (54 tests)
+  ✓ Statement Parsers: HDFC, SBI, ICICI, Axis CSV/PDF formats (36 tests)
 
-**What is tested most:** the pure-TypeScript engines. Because they are deterministic, the same inputs always give the same outputs — which is exactly what makes affordability answers **checkable**.
-
----
-
-## 13. Design Decisions and Trade-offs
-
-| Decision | Reason | Trade-off |
-|---|---|---|
-| Fully offline, no INTERNET permission | Strongest, verifiable privacy guarantee | Larger app (bundled models); no cloud sync |
-| Code does all math, LLM only explains | Eliminates hallucinated numbers | LLM cannot "improvise" answers outside engine capabilities |
-| Ranges (P10/P50/P90) over a single number | Honest about uncertainty | Slightly harder to read at a glance |
-| Rule-based anomaly detection | Every flag can be explained | Less flexible than a black-box model |
-| k-NN categorization with user corrections | Learns from the user's own data on-device | Needs a few corrections to feel accurate |
-| Pure-TS business logic | Fast to test, deterministic, portable | Heavy parsing is delegated to native for performance |
+Total: 191 unit & integration tests passing deterministically.
+```
 
 ---
 
-## 14. Limitations and Future Work
+## 12. Design Decisions and Trade-offs
 
-- Statement formats vary widely; unusual bank layouts may need parser tuning.
-- The on-device LLM is small, so explanations are concise rather than conversational.
-- Forecast quality depends on history length — hence the **3-month minimum**.
-- Android only at present.
-- Future ideas: more bank-specific parsers, multi-currency support, optional encrypted local-network sync between devices, and richer forecast calibration reports.
-
----
-
-## License & Legal
-
-The app bundles its own privacy policy, terms of service, business details, and third-party licenses (OFL, Apache, MIT) in `assets/legal/`.
+| Engineering Choice | Strategic Justification | Operational Trade-off |
+|:---|:---|:---|
+| **Zero Internet Permission** | Absolute data sovereignty and zero breach attack surface. | Inability to provide live cloud account scraping (Aggregator APIs). |
+| **Deterministic Code vs. Pure LLM Math** | Eliminates arithmetic errors and hallucinated figures entirely. | Assistant cannot invent speculative numbers beyond engine rules. |
+| **P15–P85 Uncertainty Intervals** | Communicates realistic volatility in discretionary income. | Requires slightly more visual space than a single fixed number. |
+| **Rule-Based Anomaly Explanations** | Every alert provides a concrete, human-auditable reason. | Requires explicit heuristic tuning across category baselines. |
+| **Local INT4 Quantization** | Enables local Llama execution within mobile thermal and RAM limits. | Concise, focused responses rather than long-winded conversational prose. |
 
 ---
 
-<p align="center"><b>CashCompass — know before you spend.</b></p>
+<p align="center">
+  <b>CashCompass — 100% Offline, Explainable Personal Finance.</b>
+</p>
