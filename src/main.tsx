@@ -1,16 +1,5 @@
-import React from 'react';
-import { createRoot } from 'react-dom/client';
+import {createRoot} from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
 
-import App from './App';
-
-const rootElement = document.getElementById('root');
-
-if (!rootElement) {
-  throw new Error('Unable to mount the application: #root was not found.');
-}
-
-createRoot(rootElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+createRoot(document.getElementById('root')!).render(<App />);

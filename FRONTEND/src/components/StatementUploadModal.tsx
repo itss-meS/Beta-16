@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,26 +15,31 @@ import {
   CheckCircle2,
   X,
   Sparkles,
-  ShieldCheck,
   Building2,
-  MessageSquare,
   ArrowRight,
   TrendingDown,
   TrendingUp,
+  Download,
   AlertCircle,
+  ArrowLeftRight,
+  Mail,
+  RefreshCw,
 } from 'lucide-react-native';
 import { THEME, formatINR } from '../constants/theme';
 import {
   parseOfflineStatementCSV,
-  SAMPLE_STATEMENTS,
+  parseUploadedBankStatementFile,
+  parseSmsTextAlert,
   ParsedStatementResult,
 } from '../services/statementParser';
-import { Transaction } from '../types/finance';
+import { Transaction, BankAccount } from '../types/finance';
+import { useFinance } from '../context/FinanceContext';
+import { GoogleSignInButton } from '../../../src/services/googleGmailAuth';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onImportComplete: (transactions: Transaction[]) => void;
+  onImportComplete: (transactions: Transaction[], accountId?: string) => void;
 }
 
 export const StatementUploadModal: React.FC<Props> = ({
@@ -42,42 +47,151 @@ export const StatementUploadModal: React.FC<Props> = ({
   onClose,
   onImportComplete,
 }) => {
-  const [activeTab, setActiveTab] = useState<'sample' | 'custom' | 'sms'>('sample');
+  const {
+    accounts,
+    importTransactions,
+    gmailConnected,
+    gmailEmail,
+    connectGmailAccount,
+    disconnectGmail,
+    syncFromGmailInbox,
+  } = useFinance();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'gmail' | 'file' | 'sms'>('gmail');
+  const [gmailFilter, setGmailFilter] = useState<'all' | 'receipts' | 'refunds'>('all');
+  const [isSyncingGmail, setIsSyncingGmail] = useState(false);
+  const [gmailSyncReport, setGmailSyncReport] = useState<{
+    scannedEmails: number;
+    importedCount: number;
+    duplicatesSkipped: number;
+    smartAlerts: number;
+  } | null>(null);
+  const selectedAccountId = accounts[0]?.id || 'acc_hdfc_01';
   const [customCsv, setCustomCsv] = useState('');
+  const [smsText, setSmsText] = useState('');
   const [parsedResult, setParsedResult] = useState<ParsedStatementResult | null>(null);
-  const [importSuccess, setImportSuccess] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [importSummary, setImportSummary] = useState<{
+    importedCount: number;
+    duplicatesSkipped: number;
+    newAccountsLinked?: number;
+  } | null>(null);
 
-  const handleSelectSample = (csvText: string) => {
-    const result = parseOfflineStatementCSV(csvText);
-    setParsedResult(result);
+  const handleConnectGoogle = async () => {
+    setUploadError(null);
+    setGmailSyncReport(null);
+    const res = await connectGmailAccount();
+    if (!res.ok && res.error) {
+      setUploadError(res.error);
+    }
   };
 
-  const handleParseCustom = () => {
-    if (!customCsv.trim()) return;
-    const result = parseOfflineStatementCSV(customCsv);
-    setParsedResult(result);
+  const handleFetchFromGmail = async () => {
+    setUploadError(null);
+    setGmailSyncReport(null);
+    setIsSyncingGmail(true);
+    const res = await syncFromGmailInbox(gmailFilter, false);
+    setIsSyncingGmail(false);
+    if (!res.ok) {
+      setUploadError(res.error || 'Could not fetch Gmail messages.');
+      return;
+    }
+    setGmailSyncReport({
+      scannedEmails: res.scannedEmails || 0,
+      importedCount: res.importedCount || 0,
+      duplicatesSkipped: res.duplicatesSkipped || 0,
+      smartAlerts:
+        (res.refundsFound || 0) + (res.warrantiesFound || 0) + (res.priceAlertsFound || 0),
+    });
+    onImportComplete([], selectedAccountId);
   };
 
-  const handleSimulateSMS = () => {
-    const smsData = `Date,Narration,Withdrawal,Deposit
-2026-10-28,UPI-Chai Point Tech Park,450,0
-2026-10-29,IMPS-Freelance Design Milestone,0,15000
-2026-10-30,UPI-Swiggy Instamart Grocery,680,0
-2026-10-30,UPI-Ola Electric Ride,220,0`;
-    const result = parseOfflineStatementCSV(smsData);
-    setParsedResult(result);
+  const handleFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadError(null);
+    setImportSummary(null);
+    setIsParsingFile(true);
+
+    try {
+      const combinedTxs: Transaction[] = [];
+      const accountsMap = new Map<string, BankAccount>();
+      let totalCredits = 0;
+      let totalDebits = 0;
+      let totalSelfTransfers = 0;
+      let duplicatesRemoved = 0;
+      const bankLabels: string[] = [];
+
+      for (const file of Array.from(files)) {
+        const res = await parseUploadedBankStatementFile(file, selectedAccountId);
+        combinedTxs.push(...res.transactions);
+        for (const acc of res.discoveredAccounts || []) {
+          accountsMap.set(acc.id, acc);
+        }
+        totalCredits += res.totalCredits;
+        totalDebits += res.totalDebits;
+        totalSelfTransfers += res.totalSelfTransfers || 0;
+        duplicatesRemoved += res.duplicatesRemoved || 0;
+        bankLabels.push(res.bankName);
+      }
+
+      if (combinedTxs.length === 0) {
+        setUploadError('No valid statement rows found in the selected file.');
+        setParsedResult(null);
+      } else {
+        setParsedResult({
+          bankName: bankLabels.join(' + '),
+          totalRecords: combinedTxs.length,
+          totalCredits,
+          totalDebits,
+          totalSelfTransfers,
+          dateRange: 'Statement Period',
+          transactions: combinedTxs,
+          discoveredAccounts: Array.from(accountsMap.values()),
+          duplicatesRemoved,
+          parsingNotes: [],
+        });
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Could not parse statement file.');
+    } finally {
+      setIsParsingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
-  const handleConfirmImport = () => {
+  const handleParseSms = () => {
+    if (!smsText.trim()) return;
+    setUploadError(null);
+    setImportSummary(null);
+    const result = parseSmsTextAlert(smsText, selectedAccountId);
+    if (result.transactions.length === 0) {
+      setUploadError('No valid transaction or expense amounts found in text/SMS.');
+    } else {
+      setParsedResult(result);
+    }
+  };
+
+
+
+  const handleConfirmImport = async () => {
     if (!parsedResult || parsedResult.transactions.length === 0) return;
-    onImportComplete(parsedResult.transactions);
-    setImportSuccess(true);
+    const summary = await importTransactions(
+      parsedResult.transactions,
+      false,
+      selectedAccountId,
+      parsedResult.discoveredAccounts
+    );
+    onImportComplete([], selectedAccountId);
+    setImportSummary(summary);
     setTimeout(() => {
-      setImportSuccess(false);
+      setImportSummary(null);
       setParsedResult(null);
       setCustomCsv('');
       onClose();
-    }, 1400);
+    }, 1500);
   };
 
   return (
@@ -89,45 +203,61 @@ export const StatementUploadModal: React.FC<Props> = ({
     >
       <View style={styles.overlay}>
         <View style={styles.modalContent}>
-          {/* Header */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.csv,.txt,application/pdf,text/csv,text/plain"
+            multiple
+            onChange={handleFileSelection}
+            style={{ display: 'none' }}
+            aria-label="Upload PDF or CSV bank statement"
+          />
+
+          {/* Clean Header */}
           <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Import Bank Statement</Text>
-              <View style={styles.privacyPill}>
-                <ShieldCheck size={12} color={THEME.colors.success} />
-                <Text style={styles.privacyText}>100% On-Device • Zero Cloud Transmission</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <Text style={styles.title}>Sync Gmail & Statements</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeBtn}
+              accessibilityLabel="Close sync modal"
+            >
               <X size={20} color={THEME.colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          {/* Source Tabs */}
+          {/* Source Tabs: Gmail & PDF/CSV Upload */}
           <View style={styles.tabBar}>
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'sample' && styles.tabButtonActive]}
+              style={[styles.tabButton, activeTab === 'gmail' && styles.tabButtonActive]}
               onPress={() => {
-                setActiveTab('sample');
+                setActiveTab('gmail');
                 setParsedResult(null);
+                setUploadError(null);
               }}
             >
-              <Sparkles size={14} color={activeTab === 'sample' ? '#FFF' : THEME.colors.textSecondary} />
-              <Text style={[styles.tabText, activeTab === 'sample' && styles.tabTextActive]}>
-                Sample Banks
+              <Mail
+                size={13}
+                color={activeTab === 'gmail' ? '#FFF' : THEME.colors.textSecondary}
+              />
+              <Text style={[styles.tabText, activeTab === 'gmail' && styles.tabTextActive]}>
+                Gmail Sync
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'custom' && styles.tabButtonActive]}
+              style={[styles.tabButton, activeTab === 'file' && styles.tabButtonActive]}
               onPress={() => {
-                setActiveTab('custom');
+                setActiveTab('file');
                 setParsedResult(null);
+                setUploadError(null);
               }}
             >
-              <FileSpreadsheet size={14} color={activeTab === 'custom' ? '#FFF' : THEME.colors.textSecondary} />
-              <Text style={[styles.tabText, activeTab === 'custom' && styles.tabTextActive]}>
-                Upload CSV
+              <UploadCloud
+                size={13}
+                color={activeTab === 'file' ? '#FFF' : THEME.colors.textSecondary}
+              />
+              <Text style={[styles.tabText, activeTab === 'file' && styles.tabTextActive]}>
+                PDF / CSV Upload
               </Text>
             </TouchableOpacity>
 
@@ -136,96 +266,166 @@ export const StatementUploadModal: React.FC<Props> = ({
               onPress={() => {
                 setActiveTab('sms');
                 setParsedResult(null);
+                setUploadError(null);
               }}
             >
-              <MessageSquare size={14} color={activeTab === 'sms' ? '#FFF' : THEME.colors.textSecondary} />
+              <FileText
+                size={13}
+                color={activeTab === 'sms' ? '#FFF' : THEME.colors.textSecondary}
+              />
               <Text style={[styles.tabText, activeTab === 'sms' && styles.tabTextActive]}>
-                SMS / UPI
+                Text / SMS Paste
               </Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.bodyScroll} showsVerticalScrollIndicator={false}>
-            {/* TAB 1: SAMPLE STATEMENTS */}
-            {activeTab === 'sample' && (
+            {/* TAB: DIRECT GMAIL INBOX SYNC */}
+            {activeTab === 'gmail' && (
               <View style={styles.section}>
-                <Text style={styles.sectionSubtitle}>
-                  Choose a realistic Indian bank statement to parse and import into your local budget:
-                </Text>
+                <View style={styles.dropzoneBox}>
+                  <View style={styles.dropzoneIconCircle}>
+                    <Mail size={24} color={THEME.colors.primary} />
+                  </View>
+                  <Text style={styles.dropzoneTitle}>
+                    {gmailConnected
+                      ? gmailEmail || 'Gmail Connected'
+                      : 'Fetch Bank Alerts & Receipts from Gmail'}
+                  </Text>
 
-                {SAMPLE_STATEMENTS.map((stmt) => (
-                  <TouchableOpacity
-                    key={stmt.id}
-                    style={styles.sampleCard}
-                    onPress={() => handleSelectSample(stmt.csv)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.sampleCardHeader}>
-                      <View style={styles.bankIdentity}>
-                        <View style={styles.bankIconCircle}>
-                          <Building2 size={16} color={THEME.colors.primary} />
-                        </View>
-                        <View>
-                          <Text style={styles.sampleBankTitle}>{stmt.title}</Text>
-                          <Text style={styles.sampleAccountNum}>{stmt.accountNumber} • {stmt.dateRange}</Text>
-                        </View>
-                      </View>
-                      <ArrowRight size={16} color={THEME.colors.primary} />
+                  {!gmailConnected ? (
+                    <View style={{ width: '100%', marginTop: 14 }}>
+                      <GoogleSignInButton
+                        onClick={handleConnectGoogle}
+                        label="Sign in with Google"
+                      />
                     </View>
-                    <Text style={styles.sampleSummaryText}>{stmt.summary}</Text>
-                  </TouchableOpacity>
-                ))}
+                  ) : (
+                    <View style={{ width: '100%', marginTop: 12, gap: 10 }}>
+                      <View style={styles.formatBadgesRow}>
+                        {(
+                          [
+                            { id: 'all', label: 'All Alerts' },
+                            { id: 'receipts', label: 'Receipts' },
+                            { id: 'refunds', label: 'Refunds & Trials' },
+                          ] as const
+                        ).map((chip) => (
+                          <TouchableOpacity
+                            key={chip.id}
+                            onPress={() => setGmailFilter(chip.id)}
+                            style={[
+                              styles.formatBadge,
+                              gmailFilter === chip.id && {
+                                backgroundColor: THEME.colors.primary,
+                                borderColor: THEME.colors.primary,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.formatBadgeText,
+                                gmailFilter === chip.id && { color: '#FFF' },
+                              ]}
+                            >
+                              {chip.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <TouchableOpacity
+                        style={[styles.confirmImportBtn, isSyncingGmail && { opacity: 0.7 }]}
+                        onPress={handleFetchFromGmail}
+                        disabled={isSyncingGmail}
+                      >
+                        <RefreshCw size={16} color="#FFF" />
+                        <Text style={styles.confirmImportBtnText}>
+                          {isSyncingGmail ? 'Scanning Gmail with Gemini AI...' : 'Sync from Gmail Now'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => disconnectGmail()}
+                        style={{ alignSelf: 'center', paddingVertical: 4 }}
+                      >
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: THEME.colors.textMuted }}>
+                          Disconnect Gmail
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {gmailSyncReport && (
+                  <View style={[styles.successBox, { marginTop: 10 }]}>
+                    <CheckCircle2 size={18} color={THEME.colors.success} />
+                    <Text style={styles.successText}>
+                      Scanned {gmailSyncReport.scannedEmails} emails • Imported{' '}
+                      {gmailSyncReport.importedCount} new transactions ({gmailSyncReport.duplicatesSkipped}{' '}
+                      duplicates skipped) • {gmailSyncReport.smartAlerts} Smart Radar items updated.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
 
-            {/* TAB 2: CUSTOM CSV */}
-            {activeTab === 'custom' && (
+            {/* TAB: FILE UPLOAD */}
+            {activeTab === 'file' && (
               <View style={styles.section}>
-                <Text style={styles.sectionSubtitle}>
-                  Paste bank statement CSV lines (e.g. from HDFC, SBI, ICICI internet banking):
-                </Text>
+                <TouchableOpacity
+                  style={styles.dropzoneBox}
+                  onPress={() => fileInputRef.current?.click()}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.dropzoneIconCircle}>
+                    <UploadCloud size={26} color={THEME.colors.primary} />
+                  </View>
+                  <Text style={styles.dropzoneTitle}>
+                    {isParsingFile ? 'Reading Statement...' : 'Select PDF or CSV File'}
+                  </Text>
+                  <View style={styles.formatBadgesRow}>
+                    <View style={styles.formatBadge}>
+                      <FileText size={12} color={THEME.colors.danger} />
+                      <Text style={[styles.formatBadgeText, { color: THEME.colors.danger }]}>
+                        .PDF
+                      </Text>
+                    </View>
+                    <View style={styles.formatBadge}>
+                      <FileSpreadsheet size={12} color={THEME.colors.primary} />
+                      <Text style={styles.formatBadgeText}>.CSV</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
 
+            {/* TAB: TEXT / SMS PASTE */}
+            {activeTab === 'sms' && (
+              <View style={styles.section}>
                 <TextInput
                   style={styles.csvTextArea}
                   multiline
                   numberOfLines={6}
-                  placeholder={`Date,Narration,Withdrawal,Deposit\n2026-10-15,UPI-Swiggy Gourmet,850,0\n2026-10-16,TechCorp Salary Credit,0,50000\n2026-10-18,ACH-BESCOM Electricity,1250,0`}
+                  placeholder={`Paste bank SMS alerts or transaction texts here...\nExample: "Rs. 1,450 debited from A/C X9281 at Swiggy on 31-Oct-26 via UPI"`}
                   placeholderTextColor={THEME.colors.textMuted}
-                  value={customCsv}
-                  onChangeText={setCustomCsv}
+                  value={smsText}
+                  onChangeText={setSmsText}
                 />
-
                 <TouchableOpacity
-                  style={[styles.parseBtn, !customCsv.trim() && styles.parseBtnDisabled]}
-                  onPress={handleParseCustom}
-                  disabled={!customCsv.trim()}
+                  style={[styles.parseBtn, !smsText.trim() && styles.parseBtnDisabled]}
+                  onPress={handleParseSms}
+                  disabled={!smsText.trim()}
                 >
-                  <FileSpreadsheet size={16} color="#FFF" />
-                  <Text style={styles.parseBtnText}>Parse Offline CSV</Text>
+                  <FileText size={16} color="#FFF" />
+                  <Text style={styles.parseBtnText}>Parse SMS Text Alerts</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* TAB 3: SMS SYNC */}
-            {activeTab === 'sms' && (
-              <View style={styles.section}>
-                <View style={styles.smsInfoCard}>
-                  <MessageSquare size={20} color={THEME.colors.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.smsCardTitle}>On-Device SMS Statement Sync</Text>
-                    <Text style={styles.smsCardSub}>
-                      Extracts transactional debit and credit alerts from your bank messages (HDFC, SBI, PhonePe, Google Pay). No messages leave your phone.
-                    </Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.parseBtn}
-                  onPress={handleSimulateSMS}
-                >
-                  <Sparkles size={16} color="#FFF" />
-                  <Text style={styles.parseBtnText}>Scan Recent UPI SMS Alerts</Text>
-                </TouchableOpacity>
+            {uploadError && (
+              <View style={styles.errorBanner}>
+                <AlertCircle size={16} color={THEME.colors.danger} />
+                <Text style={styles.errorBannerText}>{uploadError}</Text>
               </View>
             )}
 
@@ -233,10 +433,12 @@ export const StatementUploadModal: React.FC<Props> = ({
             {parsedResult && (
               <View style={styles.previewContainer}>
                 <View style={styles.previewHeader}>
-                  <Text style={styles.previewTitle}>Statement Preview</Text>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.previewTitle}>{parsedResult.bankName}</Text>
+                  </View>
                   <View style={styles.recordsBadge}>
                     <Text style={styles.recordsBadgeText}>
-                      {parsedResult.totalRecords} Transactions Found
+                      {parsedResult.totalRecords} Rows
                     </Text>
                   </View>
                 </View>
@@ -244,10 +446,10 @@ export const StatementUploadModal: React.FC<Props> = ({
                 <View style={styles.previewMetricsRow}>
                   <View style={styles.previewMetricCard}>
                     <View style={styles.metricIconWrap}>
-                      <TrendingUp size={14} color={THEME.colors.success} />
+                      <TrendingUp size={13} color={THEME.colors.success} />
                     </View>
                     <View>
-                      <Text style={styles.metricLabel}>Total Credits</Text>
+                      <Text style={styles.metricLabel}>Received</Text>
                       <Text style={[styles.metricVal, { color: THEME.colors.success }]}>
                         +{formatINR(parsedResult.totalCredits)}
                       </Text>
@@ -256,50 +458,73 @@ export const StatementUploadModal: React.FC<Props> = ({
 
                   <View style={styles.previewMetricCard}>
                     <View style={styles.metricIconWrap}>
-                      <TrendingDown size={14} color={THEME.colors.danger} />
+                      <TrendingDown size={13} color={THEME.colors.danger} />
                     </View>
                     <View>
-                      <Text style={styles.metricLabel}>Total Debits</Text>
+                      <Text style={styles.metricLabel}>Paid Out</Text>
                       <Text style={[styles.metricVal, { color: THEME.colors.danger }]}>
                         −{formatINR(parsedResult.totalDebits)}
                       </Text>
                     </View>
                   </View>
+
+                  {parsedResult.totalSelfTransfers > 0 && (
+                    <View style={styles.previewMetricCard}>
+                      <View style={styles.metricIconWrap}>
+                        <ArrowLeftRight size={13} color={THEME.colors.primary} />
+                      </View>
+                      <View>
+                        <Text style={styles.metricLabel}>Transfer</Text>
+                        <Text style={[styles.metricVal, { color: THEME.colors.primary }]}>
+                          {formatINR(parsedResult.totalSelfTransfers)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
 
-                <View style={styles.previewList}>
-                  {parsedResult.transactions.slice(0, 4).map((tx, idx) => (
+                <View style={[styles.previewList, { maxHeight: 240, overflowY: 'auto' }]} tabIndex={0} aria-label="Parsed transactions preview list">
+                  {parsedResult.transactions.slice(0, 20).map((tx, idx) => (
                     <View key={idx} style={styles.previewItem}>
-                      <View style={{ flex: 1 }}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
                         <Text style={styles.previewTxTitle} numberOfLines={1}>
                           {tx.title}
                         </Text>
                         <Text style={styles.previewTxMeta}>
-                          {tx.category} • {tx.date} • {tx.paymentMethod}
+                          {tx.date} {tx.time ? `• ${tx.time}` : ''}
                         </Text>
                       </View>
                       <Text
                         style={[
                           styles.previewTxAmount,
-                          tx.type === 'INCOME' ? { color: THEME.colors.success } : { color: THEME.colors.textPrimary },
+                          tx.type === 'INCOME'
+                            ? { color: THEME.colors.success }
+                            : tx.type === 'TRANSFER'
+                            ? { color: THEME.colors.primary }
+                            : { color: THEME.colors.textPrimary },
                         ]}
                       >
-                        {tx.type === 'INCOME' ? '+' : '−'}
-                        {formatINR(tx.amount)}
+                        {tx.type === 'INCOME'
+                          ? `+${formatINR(tx.amount)}`
+                          : tx.type === 'TRANSFER'
+                          ? `⇄ ${formatINR(tx.amount)}`
+                          : formatINR(tx.amount)}
                       </Text>
                     </View>
                   ))}
-                  {parsedResult.transactions.length > 4 && (
+                  {parsedResult.transactions.length > 20 && (
                     <Text style={styles.moreItemsText}>
-                      +{parsedResult.transactions.length - 4} more transactions will be imported
+                      +{parsedResult.transactions.length - 20} more rows
                     </Text>
                   )}
                 </View>
 
-                {importSuccess ? (
+                {importSummary ? (
                   <View style={styles.successBox}>
                     <CheckCircle2 size={18} color={THEME.colors.success} />
-                    <Text style={styles.successText}>Successfully imported into local storage!</Text>
+                    <Text style={styles.successText}>
+                      Imported {importSummary.importedCount} transaction(s)
+                    </Text>
                   </View>
                 ) : (
                   <TouchableOpacity
@@ -309,7 +534,7 @@ export const StatementUploadModal: React.FC<Props> = ({
                   >
                     <CheckCircle2 size={18} color="#FFF" />
                     <Text style={styles.confirmImportBtnText}>
-                      Import {parsedResult.totalRecords} Transactions to Local Storage
+                      Import {parsedResult.totalRecords} Transactions
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -328,21 +553,24 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(23, 23, 37, 0.55)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   modalContent: {
     backgroundColor: THEME.colors.card,
-    borderTopLeftRadius: THEME.borderRadius.xl,
-    borderTopRightRadius: THEME.borderRadius.xl,
+    borderRadius: THEME.borderRadius.xl,
     paddingHorizontal: THEME.spacing.lg,
     paddingTop: THEME.spacing.lg,
     paddingBottom: 24,
-    maxHeight: '88%',
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '85%',
     ...THEME.shadows.hover,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: THEME.spacing.md,
   },
@@ -350,17 +578,6 @@ const styles = StyleSheet.create({
     fontSize: THEME.typography.sizes.base,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
-  },
-  privacyPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  privacyText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: THEME.colors.success,
   },
   closeBtn: {
     padding: 4,
@@ -377,9 +594,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: THEME.borderRadius.full,
-    gap: 6,
+    gap: 5,
   },
   tabButtonActive: {
     backgroundColor: THEME.colors.primary,
@@ -395,16 +612,78 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bodyScroll: {
-    maxHeight: 460,
+    maxHeight: 440,
   },
   section: {
     marginBottom: THEME.spacing.md,
   },
-  sectionSubtitle: {
-    fontSize: 11,
-    color: THEME.colors.textSecondary,
-    marginBottom: THEME.spacing.md,
-    lineHeight: 16,
+  dropzoneBox: {
+    backgroundColor: '#FAF9FE',
+    borderRadius: THEME.borderRadius.xl,
+    paddingVertical: THEME.spacing.xl,
+    paddingHorizontal: THEME.spacing.base,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: THEME.colors.primaryLight,
+  },
+  dropzoneIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: THEME.colors.lavenderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  dropzoneTitle: {
+    fontSize: THEME.typography.sizes.sm,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    textAlign: 'center',
+  },
+  formatBadgesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: THEME.spacing.sm,
+  },
+  formatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: THEME.colors.card,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: THEME.borderRadius.full,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  formatBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.primary,
+  },
+  downloadRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: THEME.spacing.sm,
+  },
+  downloadSampleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: THEME.borderRadius.md,
+    backgroundColor: THEME.colors.background,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  downloadSampleText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.primary,
   },
   sampleCard: {
     backgroundColor: THEME.colors.background,
@@ -418,18 +697,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
   },
   bankIdentity: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flex: 1,
   },
   bankIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: THEME.colors.lavenderLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -442,11 +720,6 @@ const styles = StyleSheet.create({
   sampleAccountNum: {
     fontSize: 10,
     color: THEME.colors.textMuted,
-  },
-  sampleSummaryText: {
-    fontSize: 10,
-    color: THEME.colors.textSecondary,
-    lineHeight: 14,
     marginTop: 2,
   },
   csvTextArea: {
@@ -458,8 +731,7 @@ const styles = StyleSheet.create({
     color: THEME.colors.textPrimary,
     borderWidth: 1,
     borderColor: THEME.colors.border,
-    minHeight: 100,
-    textAlignVertical: 'top',
+    minHeight: 110,
     marginBottom: THEME.spacing.md,
   },
   parseBtn: {
@@ -480,26 +752,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFF',
   },
-  smsInfoCard: {
+  errorBanner: {
     flexDirection: 'row',
-    backgroundColor: '#FAF5FF',
-    borderRadius: THEME.borderRadius.lg,
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FDEDF0',
+    borderRadius: THEME.borderRadius.md,
     padding: THEME.spacing.md,
-    gap: THEME.spacing.md,
     borderWidth: 1,
-    borderColor: '#E9D5FF',
-    marginBottom: THEME.spacing.md,
+    borderColor: '#FECDD3',
+    marginBottom: THEME.spacing.sm,
   },
-  smsCardTitle: {
-    fontSize: THEME.typography.sizes.xs,
-    fontWeight: '700',
-    color: '#6B21A8',
-  },
-  smsCardSub: {
-    fontSize: 10,
-    color: '#7E22CE',
+  errorBannerText: {
+    fontSize: 11,
+    color: THEME.colors.danger,
+    flex: 1,
     lineHeight: 15,
-    marginTop: 2,
   },
   previewContainer: {
     backgroundColor: '#FAF9FE',
@@ -507,7 +775,7 @@ const styles = StyleSheet.create({
     padding: THEME.spacing.base,
     borderWidth: 1,
     borderColor: THEME.colors.borderLight,
-    marginTop: THEME.spacing.sm,
+    marginTop: THEME.spacing.xs,
   },
   previewHeader: {
     flexDirection: 'row',
@@ -533,7 +801,7 @@ const styles = StyleSheet.create({
   },
   previewMetricsRow: {
     flexDirection: 'row',
-    gap: THEME.spacing.md,
+    gap: 8,
     marginBottom: THEME.spacing.md,
   },
   previewMetricCard: {
@@ -542,15 +810,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: THEME.colors.card,
     borderRadius: THEME.borderRadius.md,
-    padding: THEME.spacing.sm,
-    gap: 8,
+    padding: 8,
+    gap: 6,
     borderWidth: 1,
     borderColor: THEME.colors.borderLight,
   },
   metricIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: THEME.colors.background,
     alignItems: 'center',
     justifyContent: 'center',
@@ -560,7 +828,7 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondary,
   },
   metricVal: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
   previewList: {
@@ -574,19 +842,22 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.card,
     padding: 8,
     borderRadius: THEME.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#F2F0FA',
   },
   previewTxTitle: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: THEME.colors.textPrimary,
   },
   previewTxMeta: {
     fontSize: 9,
     color: THEME.colors.textMuted,
+    marginTop: 1,
   },
   previewTxAmount: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   moreItemsText: {
     fontSize: 10,
@@ -616,11 +887,13 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: '#E8F8F0',
     paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: THEME.borderRadius.md,
   },
   successText: {
     fontSize: 11,
     fontWeight: '700',
     color: THEME.colors.success,
+    flex: 1,
   },
 });

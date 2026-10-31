@@ -1,4 +1,4 @@
-import { SavingsGoal } from '../types/finance';
+import type { SavingsGoal } from '../types/finance.ts';
 
 export const DEMO_GOALS: SavingsGoal[] = [
   {

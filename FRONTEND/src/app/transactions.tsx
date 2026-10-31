@@ -19,47 +19,54 @@ import {
   CreditCard,
   Tag,
   ShieldCheck,
+  UploadCloud,
 } from 'lucide-react-native';
 import { THEME, formatINR } from '../constants/theme';
 import { useFinance } from '../context/FinanceContext';
 import { TransactionItem } from '../components/TransactionItem';
+import { StatementUploadModal } from '../components/StatementUploadModal';
 import { BottomNavigation, NavTab } from '../components/BottomNavigation';
 import { Transaction, TransactionCategory } from '../types/finance';
 
 export default function TransactionsScreen() {
   const router = useRouter();
-  const { transactions } = useFinance();
+  const {
+    transactions,
+    availableCategories,
+    updateTransactionCategory,
+    lastCategoryPropagationNotice,
+    clearCategoryNotice,
+  } = useFinance();
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedType, setSelectedType] = useState<'ALL' | 'EXPENSE' | 'INCOME' | 'RECURRING'>('ALL');
+  const [selectedType, setSelectedType] = useState<
+    'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'RECURRING'
+  >('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  const categories = [
-    'ALL',
-    'Food',
-    'Rent',
-    'Shopping',
-    'Travel',
-    'Bills',
-    'Entertainment',
-    'Salary',
-    'Healthcare',
-    'Other',
-  ];
+  const categories = useMemo(
+    () => ['ALL', ...availableCategories],
+    [availableCategories]
+  );
 
   const filteredTransactions = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return transactions.filter((tx) => {
-      // Search matching
+      // Search matching (includes UPI Transaction ID & Paid by/to Bank)
       const matchesSearch =
-        tx.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (tx.merchant && tx.merchant.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        tx.title.toLowerCase().includes(q) ||
+        (tx.merchant && tx.merchant.toLowerCase().includes(q)) ||
+        (tx.upiTransactionId && tx.upiTransactionId.toLowerCase().includes(q)) ||
+        (tx.paidByOrToLine && tx.paidByOrToLine.toLowerCase().includes(q)) ||
         tx.amount.toString().includes(searchQuery);
 
       // Type filter
       let matchesType = true;
       if (selectedType === 'EXPENSE') matchesType = tx.type === 'EXPENSE';
       if (selectedType === 'INCOME') matchesType = tx.type === 'INCOME';
+      if (selectedType === 'TRANSFER') matchesType = tx.type === 'TRANSFER';
       if (selectedType === 'RECURRING') matchesType = !!tx.isRecurring;
 
       // Category filter
@@ -100,10 +107,42 @@ export default function TransactionsScreen() {
           <ArrowLeft size={20} color={THEME.colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Transaction History</Text>
-        <View style={styles.countBadge}>
-          <Text style={styles.countText}>{filteredTransactions.length}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() => setShowUploadModal(true)}
+            style={styles.countBadge}
+            accessibilityLabel="Upload CSV or PDF statement"
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <UploadCloud size={12} color={THEME.colors.primary} />
+              <Text style={styles.countText}>Upload</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.countBadge}>
+            <Text style={styles.countText}>{filteredTransactions.length}</Text>
+          </View>
         </View>
       </View>
+
+      {lastCategoryPropagationNotice && (
+        <TouchableOpacity
+          onPress={clearCategoryNotice}
+          style={{
+            marginHorizontal: THEME.spacing.lg,
+            marginBottom: THEME.spacing.xs,
+            backgroundColor: '#E8F8F0',
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: THEME.borderRadius.md,
+            borderWidth: 1,
+            borderColor: '#A7F3D0',
+          }}
+        >
+          <Text style={{ fontSize: 11, fontWeight: '700', color: THEME.colors.success }}>
+            {lastCategoryPropagationNotice} (Tap to dismiss)
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Search Bar */}
       <View style={styles.searchWrapper}>
@@ -124,10 +163,16 @@ export default function TransactionsScreen() {
         </View>
       </View>
 
-      {/* Filter Tabs: ALL / EXPENSE / INCOME / RECURRING */}
+      {/* Filter Tabs: ALL / EXPENSE / INCOME / TRANSFER / RECURRING */}
       <View style={styles.typeFilterRow}>
-        {(['ALL', 'EXPENSE', 'INCOME', 'RECURRING'] as const).map((type) => {
+        {(['ALL', 'EXPENSE', 'INCOME', 'TRANSFER', 'RECURRING'] as const).map((type) => {
           const isActive = selectedType === type;
+          const label =
+            type === 'RECURRING'
+              ? 'Recurring'
+              : type === 'TRANSFER'
+              ? 'Self Transfer'
+              : type.charAt(0) + type.slice(1).toLowerCase();
           return (
             <TouchableOpacity
               key={type}
@@ -140,7 +185,7 @@ export default function TransactionsScreen() {
                   isActive && styles.typeFilterTextActive,
                 ]}
               >
-                {type === 'RECURRING' ? 'Recurring' : type.charAt(0) + type.slice(1).toLowerCase()}
+                {label}
               </Text>
             </TouchableOpacity>
           );
@@ -185,9 +230,6 @@ export default function TransactionsScreen() {
         {filteredTransactions.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No matching transactions</Text>
-            <Text style={styles.emptySubtitle}>
-              Try adjusting your search query or active category filters.
-            </Text>
           </View>
         ) : (
           filteredTransactions.map((tx) => (
@@ -246,12 +288,65 @@ export default function TransactionsScreen() {
                   <Text style={styles.detailLabel}>Category</Text>
                   <Text style={styles.detailValue}>{selectedTx.category}</Text>
                 </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: THEME.colors.textSecondary }}>
+                    Change Category
+                  </Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 6 }}
+                  >
+                    {categories
+                      .filter((c) => c !== 'ALL')
+                      .map((cat) => (
+                        <TouchableOpacity
+                          key={cat}
+                          style={[
+                            styles.categoryPill,
+                            selectedTx.category === cat && styles.categoryPillActive,
+                          ]}
+                          onPress={async () => {
+                            await updateTransactionCategory(
+                              selectedTx.id,
+                              cat as TransactionCategory
+                            );
+                            setSelectedTx({
+                              ...selectedTx,
+                              category: cat as TransactionCategory,
+                            });
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.categoryPillText,
+                              selectedTx.category === cat && styles.categoryPillTextActive,
+                            ]}
+                          >
+                            {cat}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+                </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Payment Method</Text>
                   <Text style={styles.detailValue}>{selectedTx.paymentMethod}</Text>
                 </View>
+                {selectedTx.upiTransactionId && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>UPI Transaction ID</Text>
+                    <Text style={styles.detailValue}>{selectedTx.upiTransactionId}</Text>
+                  </View>
+                )}
+                {selectedTx.paidByOrToLine && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Bank Settlement</Text>
+                    <Text style={styles.detailValue}>{selectedTx.paidByOrToLine}</Text>
+                  </View>
+                )}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Timestamp</Text>
+                  <Text style={styles.detailLabel}>Date & Time</Text>
                   <Text style={styles.detailValue}>
                     {selectedTx.date} {selectedTx.time ? `at ${selectedTx.time}` : ''}
                   </Text>
@@ -260,21 +355,21 @@ export default function TransactionsScreen() {
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Recurring Status</Text>
                     <Text style={[styles.detailValue, { color: THEME.colors.primary }]}>
-                      Detected Monthly Cycle
+                      Monthly Cycle
                     </Text>
                   </View>
                 )}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Privacy Guarantee</Text>
-                  <Text style={[styles.detailValue, { color: THEME.colors.success }]}>
-                    Zero Cloud Upload • Stored Locally
-                  </Text>
-                </View>
               </View>
             )}
           </View>
         </View>
       </Modal>
+
+      <StatementUploadModal
+        visible={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onImportComplete={() => {}}
+      />
 
       {/* Bottom Navigation */}
       <BottomNavigation activeTab="transactions" onSelectTab={handleNavChange} />

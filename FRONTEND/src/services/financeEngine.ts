@@ -1,5 +1,5 @@
-import { Transaction, TransactionCategory } from '../types/finance';
-import { CATEGORIES_META } from '../constants/categories';
+import type { Transaction, TransactionCategory } from '../types/finance.ts';
+import { getCategoryMeta } from '../constants/categories.ts';
 
 export interface CategorySpendingSummary {
   category: TransactionCategory;
@@ -10,19 +10,36 @@ export interface CategorySpendingSummary {
 }
 
 /**
- * Pure, deterministic calculation of total income from a transaction list
+ * Filters to the latest recorded calendar month (e.g. '2026-10') when multiple months exist,
+ * so monthly summary cards reflect the active monthly cycle cleanly while simulator/backtest
+ * leverage full multi-month history.
+ */
+export const getLatestMonthTransactions = (transactions: Transaction[]): Transaction[] => {
+  const safeList = Array.isArray(transactions) ? transactions : [];
+  if (safeList.length === 0) return [];
+  const validMonths = safeList
+    .map((tx) => tx.date.slice(0, 7))
+    .filter((ym) => /^\d{4}-\d{2}$/.test(ym))
+    .sort();
+  if (validMonths.length === 0) return transactions;
+  const latestMonth = validMonths[validMonths.length - 1];
+  return transactions.filter((tx) => tx.date.startsWith(latestMonth));
+};
+
+/**
+ * Pure, deterministic calculation of monthly income from the latest active month
  */
 export const calculateTotalIncome = (transactions: Transaction[]): number => {
-  return transactions
+  return getLatestMonthTransactions(transactions)
     .filter((tx) => tx.type === 'INCOME')
     .reduce((sum, tx) => sum + tx.amount, 0);
 };
 
 /**
- * Pure, deterministic calculation of total expenses from a transaction list
+ * Pure, deterministic calculation of monthly expenses from the latest active month
  */
 export const calculateTotalExpenses = (transactions: Transaction[]): number => {
-  return transactions
+  return getLatestMonthTransactions(transactions)
     .filter((tx) => tx.type === 'EXPENSE')
     .reduce((sum, tx) => sum + tx.amount, 0);
 };
@@ -35,36 +52,39 @@ export const calculateNetCashFlow = (transactions: Transaction[]): number => {
 };
 
 /**
- * Computes category-wise breakdown with percentage and metadata color
+ * Computes category-wise breakdown for the active month with percentage and metadata color
  */
-export const calculateCategorySpending = (transactions: Transaction[]): CategorySpendingSummary[] => {
-  const expenseTx = transactions.filter((tx) => tx.type === 'EXPENSE');
+export const calculateCategorySpending = (
+  transactions: Transaction[],
+  customColors?: Record<string, string>
+): CategorySpendingSummary[] => {
+  const expenseTx = getLatestMonthTransactions(transactions).filter((tx) => tx.type === 'EXPENSE');
   const totalExpense = expenseTx.reduce((sum, tx) => sum + tx.amount, 0);
 
-  const categoryMap: Partial<Record<TransactionCategory, { amount: number; count: number }>> = {};
+  const categoryMap: Record<string, { amount: number; count: number }> = {};
 
   expenseTx.forEach((tx) => {
-    if (!categoryMap[tx.category]) {
-      categoryMap[tx.category] = { amount: 0, count: 0 };
+    const key = tx.category || 'Other';
+    if (!categoryMap[key]) {
+      categoryMap[key] = { amount: 0, count: 0 };
     }
-    categoryMap[tx.category]!.amount += tx.amount;
-    categoryMap[tx.category]!.count += 1;
+    categoryMap[key].amount += tx.amount;
+    categoryMap[key].count += 1;
   });
 
   const results: CategorySpendingSummary[] = Object.keys(categoryMap).map((catKey) => {
-    const category = catKey as TransactionCategory;
-    const item = categoryMap[category]!;
+    const item = categoryMap[catKey];
     const percentage = totalExpense > 0 ? (item.amount / totalExpense) * 100 : 0;
+    const meta = getCategoryMeta(catKey, customColors);
     return {
-      category,
+      category: catKey,
       amount: item.amount,
       percentage: Number(percentage.toFixed(1)),
       transactionCount: item.count,
-      color: CATEGORIES_META[category]?.color || '#9CA3AF',
+      color: meta.color,
     };
   });
 
-  // Sort descending by highest spending
   return results.sort((a, b) => b.amount - a.amount);
 };
 
@@ -78,6 +98,7 @@ export const calculateDailySafeSpend = (
   daysRemainingInMonth: number = 10
 ): { dailySafeAmount: number; discretionaryPool: number } => {
   const discretionaryPool = Math.max(0, currentBalance - committedUpcomingBills - reserveFloor);
-  const dailySafeAmount = daysRemainingInMonth > 0 ? Math.floor(discretionaryPool / daysRemainingInMonth) : 0;
+  const dailySafeAmount =
+    daysRemainingInMonth > 0 ? Math.floor(discretionaryPool / daysRemainingInMonth) : 0;
   return { dailySafeAmount, discretionaryPool };
 };

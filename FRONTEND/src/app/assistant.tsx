@@ -22,43 +22,44 @@ import {
 import { THEME, formatINR } from '../constants/theme';
 import { useFinance } from '../context/FinanceContext';
 import { MascotAvatar } from '../components/MascotAvatar';
-import { queryLocalAssistant, AssistantMessage } from '../services/assistantEngine';
+import { AssistantMessage } from '../services/assistantEngine';
 import { BottomNavigation, NavTab } from '../components/BottomNavigation';
 
 export default function AssistantScreen() {
   const router = useRouter();
-  const { transactions, totalBalance } = useFinance();
+  const { user, transactions, totalBalance, askOnlineAssistant } = useFinance();
   const scrollViewRef = useRef<ScrollView>(null);
 
   const [inputQuery, setInputQuery] = useState('');
+  const [isSending, setIsSending] = useState(false);
 
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
       id: 'init_1',
       sender: 'assistant',
       timestamp: '10:00 AM',
-      text: "Hey Parth! I'm Finny, your offline personal finance assistant. I calculate answers directly using your on-device transactions with zero cloud tracking.",
+      text: `Hey ${
+        user?.fullName || 'Parth'
+      }! Ask me anything about your balance, spending categories, recurring bills, or upcoming purchases.`,
       calculationCard: {
-        title: 'Ready for Explainable Analysis',
+        title: 'Summary',
         metrics: [
-          { label: 'Tracked Balance', value: formatINR(totalBalance) },
-          { label: 'Local Transactions', value: `${transactions.length} items` },
+          { label: 'Total Balance', value: formatINR(totalBalance) },
+          { label: 'Transactions', value: `${transactions.length} items` },
         ],
-        verdict: 'Ask me anything about affordability, recurring bills, or spending trends.',
       },
       suggestedQuestions: [
         'Can I afford a laptop next month?',
         'Where did my money go?',
         'What are my recurring payments?',
-        'Why did my spending increase?',
         'How much can I save?',
       ],
     },
   ]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend || inputQuery).trim();
-    if (!query) return;
+    if (!query || isSending) return;
 
     const userMsg: AssistantMessage = {
       id: `usr_${Date.now()}`,
@@ -67,11 +68,17 @@ export default function AssistantScreen() {
       text: query,
     };
 
-    // Calculate assistant reply deterministically from local finance engine
-    const reply = queryLocalAssistant(query, transactions, totalBalance);
-
-    setMessages((prev) => [...prev, userMsg, reply]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputQuery('');
+    setIsSending(true);
+
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 60);
+
+    const reply = await askOnlineAssistant(query);
+    setMessages((prev) => [...prev, reply]);
+    setIsSending(false);
 
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -109,13 +116,7 @@ export default function AssistantScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <MascotAvatar size={34} showShades={true} />
-          <View>
-            <Text style={styles.headerTitle}>CashCompass AI Assistant</Text>
-            <View style={styles.offlineRow}>
-              <View style={styles.greenDot} />
-              <Text style={styles.offlineText}>100% On-Device Engine</Text>
-            </View>
-          </View>
+          <Text style={styles.headerTitle}>CashCompass Assistant</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
@@ -239,6 +240,16 @@ export default function AssistantScreen() {
               </View>
             );
           })}
+          {isSending && (
+            <View style={[styles.messageWrapper, styles.assistantWrapper]}>
+              <View style={styles.assistantAvatar}>
+                <MascotAvatar size={28} showShades={true} />
+              </View>
+              <View style={[styles.bubble, styles.assistantBubble]}>
+                <Text style={styles.assistantText}>Analyzing with Gemini AI...</Text>
+              </View>
+            </View>
+          )}
         </ScrollView>
 
         {/* Input Dock */}
@@ -254,10 +265,10 @@ export default function AssistantScreen() {
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              !inputQuery.trim() && styles.sendBtnDisabled,
+              (!inputQuery.trim() || isSending) && styles.sendBtnDisabled,
             ]}
             onPress={() => handleSendMessage()}
-            disabled={!inputQuery.trim()}
+            disabled={!inputQuery.trim() || isSending}
           >
             <Send size={18} color="#FFF" />
           </TouchableOpacity>

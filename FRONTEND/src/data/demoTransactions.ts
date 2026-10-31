@@ -1,4 +1,4 @@
-import { Transaction } from '../types/finance';
+import type { Transaction } from '../types/finance.ts';
 
 export const DEMO_TRANSACTIONS: Transaction[] = [
   // Income

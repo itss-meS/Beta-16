@@ -11,10 +11,14 @@ import {
   TrendingUp,
   Activity,
   MoreHorizontal,
+  ArrowLeftRight,
+  Wallet,
+  Tag,
 } from 'lucide-react-native';
 import { THEME, formatINR } from '../constants/theme';
 import { Transaction } from '../types/finance';
-import { CATEGORIES_META } from '../constants/categories';
+import { getCategoryMeta } from '../constants/categories';
+import { useFinance } from '../context/FinanceContext';
 
 interface Props {
   transaction: Transaction;
@@ -22,11 +26,16 @@ interface Props {
 }
 
 export const TransactionItem: React.FC<Props> = ({ transaction, onPress }) => {
+  const { customCategoryColors } = useFinance();
   const isIncome = transaction.type === 'INCOME';
-  const meta = CATEGORIES_META[transaction.category] || CATEGORIES_META.Other;
+  const isTransfer = transaction.type === 'TRANSFER';
+  const meta = getCategoryMeta(transaction.category, customCategoryColors);
 
   const renderIcon = () => {
     const size = 18;
+    if (isTransfer) {
+      return <ArrowLeftRight size={size} color={THEME.colors.primary} />;
+    }
     const color = meta.color;
     switch (transaction.category) {
       case 'Food':
@@ -43,12 +52,16 @@ export const TransactionItem: React.FC<Props> = ({ transaction, onPress }) => {
         return <Film size={size} color={color} />;
       case 'Salary':
         return <Briefcase size={size} color={color} />;
+      case 'Pocket Money':
+        return <Wallet size={size} color={color} />;
       case 'Investments':
         return <TrendingUp size={size} color={color} />;
       case 'Healthcare':
         return <Activity size={size} color={color} />;
-      default:
+      case 'Other':
         return <MoreHorizontal size={size} color={color} />;
+      default:
+        return <Tag size={size} color={color} />;
     }
   };
 
@@ -59,19 +72,49 @@ export const TransactionItem: React.FC<Props> = ({ transaction, onPress }) => {
       activeOpacity={0.7}
     >
       <View style={styles.leftRow}>
-        <View style={[styles.iconCircle, { backgroundColor: `${meta.color}18` }]}>
+        <View
+          style={[
+            styles.iconCircle,
+            {
+              backgroundColor: isTransfer
+                ? THEME.colors.lavenderLight
+                : `${meta.color}18`,
+            },
+          ]}
+        >
           {renderIcon()}
         </View>
         <View style={styles.textContainer}>
           <Text style={styles.title} numberOfLines={1}>
             {transaction.title}
           </Text>
+          {transaction.upiTransactionId && (
+            <Text style={styles.upiRefText} numberOfLines={1}>
+              UPI Transaction ID: {transaction.upiTransactionId}
+            </Text>
+          )}
           <View style={styles.subRow}>
-            <Text style={styles.categoryBadge}>{transaction.category}</Text>
+            <Text style={styles.categoryBadge}>
+              {isTransfer ? 'Self Transfer' : transaction.category}
+            </Text>
             <Text style={styles.bullet}>•</Text>
-            <Text style={styles.dateText}>{transaction.date}</Text>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.paymentMethod}>{transaction.paymentMethod}</Text>
+            <Text style={styles.dateText}>
+              {transaction.date}
+              {transaction.time ? ` ${transaction.time}` : ''}
+            </Text>
+            {transaction.paidByOrToLine ? (
+              <>
+                <Text style={styles.bullet}>•</Text>
+                <Text style={styles.bankSubText} numberOfLines={1}>
+                  {transaction.paidByOrToLine}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.bullet}>•</Text>
+                <Text style={styles.paymentMethod}>{transaction.paymentMethod}</Text>
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -80,10 +123,18 @@ export const TransactionItem: React.FC<Props> = ({ transaction, onPress }) => {
         <Text
           style={[
             styles.amount,
-            isIncome ? styles.amountIncome : styles.amountExpense,
+            isIncome
+              ? styles.amountIncome
+              : isTransfer
+              ? styles.amountTransfer
+              : styles.amountExpense,
           ]}
         >
-          {isIncome ? `+${formatINR(transaction.amount)}` : `−${formatINR(transaction.amount)}`}
+          {isIncome
+            ? `+${formatINR(transaction.amount)}`
+            : isTransfer
+            ? `⇄ ${formatINR(transaction.amount)}`
+            : `−${formatINR(transaction.amount)}`}
         </Text>
       </View>
     </TouchableOpacity>
@@ -125,7 +176,12 @@ const styles = StyleSheet.create({
     fontSize: THEME.typography.sizes.sm,
     fontWeight: '700',
     color: THEME.colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  upiRefText: {
+    fontSize: 10,
+    color: THEME.colors.textSecondary,
+    marginBottom: 2,
   },
   subRow: {
     flexDirection: 'row',
@@ -146,6 +202,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: THEME.colors.textMuted,
   },
+  bankSubText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: THEME.colors.primary,
+  },
   paymentMethod: {
     fontSize: 9,
     fontWeight: '700',
@@ -164,6 +225,9 @@ const styles = StyleSheet.create({
   },
   amountIncome: {
     color: THEME.colors.success,
+  },
+  amountTransfer: {
+    color: THEME.colors.primary,
   },
   amountExpense: {
     color: THEME.colors.textPrimary,

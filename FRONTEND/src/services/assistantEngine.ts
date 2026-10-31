@@ -1,13 +1,13 @@
-import { Transaction } from '../types/finance';
+import type { Transaction } from '../types/finance.ts';
 import {
   calculateTotalIncome,
   calculateTotalExpenses,
   calculateCategorySpending,
   calculateDailySafeSpend,
-} from './financeEngine';
-import { detectRecurringPayments, calculateTotalRecurringMonthly } from './recurringDetector';
-import { simulatePurchaseScenarios } from './simulator';
-import { formatINR } from '../constants/theme';
+} from './financeEngine.ts';
+import { detectRecurringPayments, calculateTotalRecurringMonthly } from './recurringDetector.ts';
+import { simulatePurchaseScenarios } from './simulator.ts';
+import { formatINR } from '../constants/theme.ts';
 
 export interface AssistantMessage {
   id: string;

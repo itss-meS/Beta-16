@@ -1,30 +1,28 @@
-import { defineConfig } from 'vitest/config';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { fileURLToPath } from 'node:url';
+import path from 'path';
+import {defineConfig} from 'vite';
 
-export default defineConfig({
-  plugins: [react()],
-  base: './',
-  resolve: {
-    alias: {
-      '@plugins': fileURLToPath(new URL('./plugins', import.meta.url)),
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  },
-  build: {
-    outDir: 'dist',
-    target: 'es2022',
-    sourcemap: false,
-    assetsInlineLimit: 0
-  },
-  test: {
-    environment: 'node',
-    include: ['tests/unit/**/*.test.ts', 'tests/unit/**/*.test.tsx'],
-    coverage: {
-      provider: 'v8',
-      include: ['src/core/**/*.ts', 'src/utils/**/*.ts'],
-      exclude: ['src/utils/a11y.ts'],
-      reporter: ['text-summary', 'json-summary']
-    }
-  }
+export default defineConfig(() => {
+  return {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+        'react-native-svg': path.resolve(__dirname, 'src/shims/react-native-svg.tsx'),
+        'react-native-safe-area-context': path.resolve(__dirname, 'src/shims/react-native-safe-area-context.tsx'),
+        'react-native': path.resolve(__dirname, 'src/shims/react-native.tsx'),
+        'lucide-react-native': 'lucide-react',
+        'expo-router': path.resolve(__dirname, 'src/shims/expo-router.tsx'),
+        'expo-status-bar': path.resolve(__dirname, 'src/shims/expo-status-bar.tsx'),
+      },
+    },
+    server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
+      hmr: process.env.DISABLE_HMR !== 'true',
+      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
+      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+  };
 });
