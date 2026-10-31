@@ -1,5 +1,5 @@
-import React from'react';import{Pressable,StyleSheet,Text,View,ViewStyle}from'react-native';import{Ionicons}from'@expo/vector-icons';import{C,shadow}from'../constants/theme';
-export function Card({children,style}:{children:React.ReactNode;style?:ViewStyle}){return <View style={[s.card,shadow,style]}>{children}</View>}
+import { Pressable, StyleSheet, Text, View } from '../web/react-native';import type { CSSProperties } from 'react';import { Ionicons } from '../web/icons';import { C, shadow } from '../constants/theme';
+export function Card({children,style}:{children:React.ReactNode;style?:CSSProperties}){return <View style={[s.card,shadow,style]}>{children}</View>}
 export function Heading({title,action}:{title:string;action?:string}){return <View style={s.row}><Text style={s.heading}>{title}</Text>{action&&<Text style={s.action}>{action}</Text>}</View>}
 export function Chip({label,selected,onPress}:{label:string;selected?:boolean;onPress?:()=>void}){return <Pressable onPress={onPress} style={[s.chip,selected&&s.selected]}><Text style={[s.chipText,selected&&{color:'white'}]}>{label}</Text></Pressable>}
 export function IconBox({name,color=C.purple,bg='#F0EAFE',size=20}:{name:any;color?:string;bg?:string;size?:number}){return <View style={[s.icon,{backgroundColor:bg}]}><Ionicons name={name} size={size} color={color}/></View>}

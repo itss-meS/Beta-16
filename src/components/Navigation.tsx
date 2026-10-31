@@ -1,4 +1,4 @@
-import React from 'react';import{Pressable,StyleSheet,Text,View}from'react-native';import{Ionicons}from'@expo/vector-icons';import{C}from'../constants/theme';
+import { Pressable, StyleSheet, Text, View } from '../web/react-native';import { Ionicons } from '../web/icons';import { C } from '../constants/theme';
 const tabs=[['Home','home-outline'],['Activity','receipt-outline'],['Insights','pie-chart-outline'],['Planner','calculator-outline'],['Assistant','chatbubble-ellipses-outline']] as const;
 export function Navigation({active,onSelect}:{active:string;onSelect:(s:string)=>void}){return <View style={st.bar}>{tabs.map(([name,icon])=><Pressable key={name} onPress={()=>onSelect(name)} style={st.item}><Ionicons name={icon as any} size={21} color={active===name?C.purple:C.muted}/><Text style={[st.label,active===name&&{color:C.purple,fontWeight:'700'}]}>{name}</Text></Pressable>)}</View>}
 const st=StyleSheet.create({bar:{flexDirection:'row',background:'white',paddingTop:12,paddingBottom:8,borderTopWidth:1,borderColor:'#F0EDF4',justifyContent:'space-around'},item:{alignItems:'center',gap:4,minWidth:55},label:{fontSize:10,color:C.muted}});
