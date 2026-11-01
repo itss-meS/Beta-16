@@ -5,10 +5,9 @@ type AnyStyle = Record<string, any> | false | null | undefined | AnyStyle[];
 export function flattenStyle(style?: AnyStyle): React.CSSProperties {
   if (!style) return {};
   if (Array.isArray(style)) {
-    return style.reduce<React.CSSProperties>((acc, item) => {
-      Object.assign(acc, flattenStyle(item));
-      return acc;
-    }, {});
+    const acc: React.CSSProperties = {};
+    for (const item of style) Object.assign(acc, flattenStyle(item));
+    return acc;
   }
   if (typeof style !== 'object') return {};
 
@@ -360,6 +359,7 @@ export const ScrollView = forwardRef<ScrollView, any>(
       horizontal,
       showsVerticalScrollIndicator = true,
       showsHorizontalScrollIndicator = true,
+      keyboardShouldPersistTaps,
       children,
       ...rest
     },

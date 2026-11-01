@@ -1,4 +1,9 @@
-import 'dotenv/config';
+// Native Node 20.6+ .env loader (zero external dependency)
+if (typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile();
+  } catch {}
+}
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
