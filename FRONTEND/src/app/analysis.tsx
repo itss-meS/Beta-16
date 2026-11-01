@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -50,6 +50,8 @@ export default function AnalysisScreen() {
   // Interactive Financial Chatbot State (Replaces Strategy tab)
   const [chatInput, setChatInput] = useState('');
   const [isBotThinking, setIsBotThinking] = useState(false);
+  const chatEndRef = useRef<any>(null);
+
   const [chatMessages, setChatMessages] = useState<AssistantMessage[]>([
     {
       id: 'init_eval_1',
@@ -109,6 +111,15 @@ export default function AnalysisScreen() {
       setIsBotThinking(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'chatbot') {
+      const timer = setTimeout(() => {
+        chatEndRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [chatMessages, isBotThinking, activeTab]);
 
   // Calculator State
   const [userAge, setUserAge] = useState<string>('24');
@@ -311,6 +322,7 @@ export default function AnalysisScreen() {
                   </Text>
                 </View>
               )}
+              <View ref={chatEndRef} style={{ height: 2 }} />
             </View>
 
             {/* Interactive Query Input Bar */}
@@ -1037,6 +1049,9 @@ const styles = StyleSheet.create({
   chatMessageList: {
     gap: 10,
     marginBottom: 12,
+    maxHeight: 380,
+    overflowY: 'auto',
+    paddingRight: 4,
   },
   chatBubble: {
     borderRadius: 14,
