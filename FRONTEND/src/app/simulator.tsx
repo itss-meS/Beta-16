@@ -395,58 +395,115 @@ export default function SimulatorScreen() {
           </Text>
         </View>
 
-        {/* TIMELINE COMPARISON OPTIONS (Now, 3m, 6m, 8m, 12m) */}
-        <View style={{ marginBottom: THEME.spacing.lg }}>
-          <Text style={styles.sectionHeaderTitle}>Purchase Timeline Comparison</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
-          >
-            {explainableResult.timelineOptions.map((opt) => {
-              const isRec = opt.rating === 'RECOMMENDED';
-              return (
-                <View
-                  key={opt.months}
-                  style={[
-                    styles.timelineCard,
-                    isRec && styles.timelineCardRecommended,
-                  ]}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={[styles.timelineCardLabel, isRec && { color: THEME.colors.primary }]}>
-                      {opt.label}
-                    </Text>
-                    {isRec && (
-                      <View style={styles.recBadge}>
-                        <Check size={10} color="#FFF" />
-                        <Text style={styles.recBadgeText}>BEST</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <Text style={styles.timelineDate}>{opt.expectedDate}</Text>
-                  <Text style={styles.timelineSavings}>
-                    Save {formatINR(opt.requiredMonthlySavings)}/mo
-                  </Text>
-                  <Text style={styles.timelineBuffer}>
-                    Buffer: {formatINR(opt.emergencyBufferRemaining)} ({opt.emergencyCoverageMonthsRemaining} mo)
-                  </Text>
-                  <Text style={styles.timelineVerdict} numberOfLines={2}>
-                    {opt.summaryVerdict}
-                  </Text>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* VISUAL EXPLANATION PANEL */}
+        {/* 10-POINT EXPLANATION PANEL (Clean Breakdown of Inputs, Assumptions & Safety Impacts) */}
         <View style={styles.explanationPanelCard}>
-          <Text style={styles.panelTitle}>Financial Goal Logic Flow</Text>
-          <View style={{ alignItems: 'center', marginVertical: 10 }}>
-            {/* Diagram representation of 10-point explanation */}
-            <Text style={styles.panelSubtitle}>10-Point Explanation: Flow Breakdown</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <Layers size={18} color={THEME.colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.panelTitle}>10-Point Explanation Panel</Text>
+              <Text style={styles.panelSubtitle}>
+                Complete breakdown of inputs, assumptions & safety impacts
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.gridContainer}>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>1. Available Liquid Balance</Text>
+              <Text style={styles.gridValue}>
+                {formatINR(explainableResult.explanationPanel.currentAvailableBalance)}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>2. Total Monthly Income</Text>
+              <Text style={styles.gridValue}>
+                {formatINR(explainableResult.explanationPanel.totalMonthlyIncome)}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>3. Essential Expenses</Text>
+              <Text style={styles.gridValue}>
+                {formatINR(explainableResult.explanationPanel.monthlyEssentialExpenses)}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>4. Average Variable Outflow</Text>
+              <Text style={styles.gridValue}>
+                {formatINR(explainableResult.explanationPanel.averageVariableExpenses)}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>5. Goal Target Cost</Text>
+              <Text style={[styles.gridValue, { color: THEME.colors.primary }]}>
+                {formatINR(explainableResult.explanationPanel.goalAmount)}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>6. Monthly Savings Capacity</Text>
+              <Text style={[styles.gridValue, { color: THEME.colors.primary }]}>
+                {formatINR(explainableResult.explanationPanel.monthlySavingsCapacity)}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>7. Completion Horizon</Text>
+              <Text style={styles.gridValue}>
+                {explainableResult.explanationPanel.expectedMonthsToGoal} Months
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>8. Expected Completion Date</Text>
+              <Text style={styles.gridValue}>
+                {explainableResult.explanationPanel.expectedCompletionDate}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>9. Recommended Purchase Date</Text>
+              <Text style={[styles.gridValue, { color: THEME.colors.success }]}>
+                {explainableResult.explanationPanel.recommendedPurchaseDate}
+              </Text>
+            </View>
+            <View style={styles.gridItem}>
+              <Text style={styles.gridLabel}>10. Balance After Purchase</Text>
+              <Text
+                style={[
+                  styles.gridValue,
+                  {
+                    color:
+                      explainableResult.explanationPanel.projectedBalanceAfterPurchase < 0
+                        ? THEME.colors.danger
+                        : THEME.colors.textPrimary,
+                  },
+                ]}
+              >
+                {formatINR(explainableResult.explanationPanel.projectedBalanceAfterPurchase)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Emergency Fund Impact */}
+          <View style={styles.impactBox}>
+            <Text style={styles.impactTitle}>Emergency Fund Impact:</Text>
+            <Text style={styles.impactText}>
+              {explainableResult.explanationPanel.emergencyFundImpact}
+            </Text>
+          </View>
+
+          {/* Risks & Assumptions */}
+          <View style={styles.risksBox}>
+            <Text style={styles.risksTitle}>Risks & Assumptions:</Text>
+            {explainableResult.explanationPanel.risksAndAssumptions.map((risk, idx) => (
+              <Text key={idx} style={[styles.impactText, { fontSize: 10, color: '#92400E' }]}>
+                • {risk}
+              </Text>
+            ))}
+          </View>
+
+          {/* Detailed Reasoning */}
+          <View style={styles.reasoningBox}>
+            <Text style={styles.reasoningTitle}>Why This Recommendation?</Text>
+            <Text style={[styles.impactText, { fontSize: 10, color: THEME.colors.textPrimary }]}>
+              {explainableResult.explanationPanel.detailedReasoning}
+            </Text>
           </View>
         </View>
 
