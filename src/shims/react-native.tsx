@@ -392,7 +392,7 @@ export const ScrollView = forwardRef<ScrollView, any>(
       (!horizontal && !showsVerticalScrollIndicator) ||
       (horizontal && !showsHorizontalScrollIndicator)
         ? 'cc-no-scrollbar'
-        : '';
+        : 'cc-custom-scrollbar';
 
     return (
       <div
@@ -557,7 +557,10 @@ export const Modal: React.FC<{
 };
 
 export const KeyboardAvoidingView: React.FC<any> = ({ style, children, behavior: _b, ...rest }) => (
-  <View style={style} {...rest}>
+  <View
+    style={[{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }, style]}
+    {...rest}
+  >
     {children}
   </View>
 );
