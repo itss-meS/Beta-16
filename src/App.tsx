@@ -24,6 +24,7 @@ import OnboardingScreen from '../FRONTEND/src/app/onboarding';
 import AuthScreen from '../FRONTEND/src/app/auth';
 import SecurityComplianceScreen from '../FRONTEND/src/app/security';
 import SmartRadarScreen from '../FRONTEND/src/app/smart-radar';
+import InvestmentsScreen from '../FRONTEND/src/app/investments';
 
 interface AlertState {
   title: string;
@@ -158,6 +159,8 @@ const CashCompassViewport: React.FC = () => {
         return <SecurityComplianceScreen />;
       case '/smart-radar':
         return <SmartRadarScreen />;
+      case '/investments':
+        return <InvestmentsScreen />;
       case '/onboarding':
         return <OnboardingScreen />;
       case '/auth':
