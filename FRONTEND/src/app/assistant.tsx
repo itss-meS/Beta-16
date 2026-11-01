@@ -18,6 +18,8 @@ import {
   HelpCircle,
   ShieldCheck,
   Calculator,
+  Cpu,
+  ChevronDown,
 } from 'lucide-react-native';
 import { THEME, formatINR } from '../constants/theme';
 import { useFinance } from '../context/FinanceContext';
@@ -29,6 +31,7 @@ export default function AssistantScreen() {
   const router = useRouter();
   const { user, transactions, totalBalance, askOnlineAssistant } = useFinance();
   const scrollViewRef = useRef<ScrollView>(null);
+  const messagesEndRef = useRef<any>(null);
 
   const [inputQuery, setInputQuery] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -56,6 +59,24 @@ export default function AssistantScreen() {
       ],
     },
   ]);
+
+  const scrollToBottom = (animated = true) => {
+    if (messagesEndRef.current) {
+      try {
+        messagesEndRef.current.scrollIntoView?.({
+          behavior: animated ? 'smooth' : 'auto',
+          block: 'end',
+        });
+      } catch {}
+    }
+    scrollViewRef.current?.scrollToEnd({ animated });
+  };
+
+  useEffect(() => {
+    scrollToBottom(true);
+    const timer = setTimeout(() => scrollToBottom(false), 100);
+    return () => clearTimeout(timer);
+  }, [messages, isSending]);
 
   const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend || inputQuery).trim();
@@ -116,13 +137,25 @@ export default function AssistantScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <MascotAvatar size={34} showShades={true} />
-          <Text style={styles.headerTitle}>CashCompass Assistant</Text>
+          <View>
+            <Text style={styles.headerTitle}>CashCompass Assistant</Text>
+            <View style={styles.offlineRow}>
+              <View style={styles.greenDot} />
+              <Text style={styles.offlineText}>AI Financial Assistant</Text>
+            </View>
+          </View>
         </View>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          onPress={() => router.push('/security')}
+          style={styles.backButton}
+          accessibilityLabel="AI Model Runtime Settings"
+        >
+          <Cpu size={18} color={THEME.colors.primary} />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Chat Stream */}
@@ -130,7 +163,8 @@ export default function AssistantScreen() {
           ref={scrollViewRef}
           style={styles.chatScroll}
           contentContainerStyle={styles.chatContent}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
+          keyboardShouldPersistTaps="handled"
         >
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
@@ -250,7 +284,19 @@ export default function AssistantScreen() {
               </View>
             </View>
           )}
+          <View ref={messagesEndRef} style={{ height: 4 }} />
         </ScrollView>
+
+        {/* Floating Quick Scroll to Latest */}
+        <TouchableOpacity
+          style={styles.scrollDownFloating}
+          onPress={() => scrollToBottom(true)}
+          accessibilityLabel="Scroll to latest messages"
+          activeOpacity={0.8}
+        >
+          <ChevronDown size={14} color={THEME.colors.primary} />
+          <Text style={styles.scrollDownText}>Latest</Text>
+        </TouchableOpacity>
 
         {/* Input Dock */}
         <View style={styles.inputDock}>
@@ -284,7 +330,9 @@ export default function AssistantScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: THEME.colors.background,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -333,11 +381,34 @@ const styles = StyleSheet.create({
   },
   chatScroll: {
     flex: 1,
+    minHeight: 0,
   },
   chatContent: {
     paddingHorizontal: THEME.spacing.lg,
     paddingTop: THEME.spacing.base,
-    paddingBottom: 24,
+    paddingBottom: 28,
+    flexGrow: 1,
+  },
+  scrollDownFloating: {
+    position: 'absolute',
+    right: 16,
+    bottom: 66,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#E2D9F3',
+    ...THEME.shadows.card,
+    zIndex: 10,
+  },
+  scrollDownText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.primary,
   },
   messageWrapper: {
     flexDirection: 'row',
