@@ -37,11 +37,33 @@ export default function InvestmentSuggestionsScreen() {
   const router = useRouter();
   const { transactions, totalBalance, accounts } = useFinance();
 
-  const [investmentInput, setInvestmentInput] = useState('10000');
+  const [investmentInput, setInvestmentInput] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cc_user_custom_allocations_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.investmentAmount && parsed.investmentAmount > 0) {
+          return String(parsed.investmentAmount);
+        }
+      }
+    } catch {}
+    return '10000';
+  });
+
   const [activeTab, setActiveTab] = useState<'LOW_RISK' | 'HIGH_RISK' | 'RISK_TABLE'>('LOW_RISK');
   const [selectedProduct, setSelectedProduct] = useState<InvestmentProduct | null>(null);
 
   const parsedAmount = Math.max(0, parseFloat(investmentInput) || 0);
+
+  const allLowRiskProducts = useMemo(
+    () => VERIFIED_INVESTMENT_PRODUCTS.filter((p) => p.category === 'LOW_RISK'),
+    []
+  );
+
+  const allHighRiskProducts = useMemo(
+    () => VERIFIED_INVESTMENT_PRODUCTS.filter((p) => p.category === 'HIGH_RISK'),
+    []
+  );
 
   const analysis = useMemo(
     () => analyzeInvestmentSuggestions(parsedAmount, transactions, totalBalance, 6),
@@ -181,7 +203,7 @@ export default function InvestmentSuggestionsScreen() {
           >
             <ShieldCheck size={14} color={activeTab === 'LOW_RISK' ? '#FFF' : '#10B981'} />
             <Text style={[styles.tabText, activeTab === 'LOW_RISK' && styles.tabTextActive]}>
-              Low-Risk ({analysis.eligibleLowRiskProducts.length})
+              Low-Risk ({analysis.eligibleLowRiskProducts.length}/{allLowRiskProducts.length})
             </Text>
           </TouchableOpacity>
 
@@ -191,7 +213,7 @@ export default function InvestmentSuggestionsScreen() {
           >
             <TrendingUp size={14} color={activeTab === 'HIGH_RISK' ? '#FFF' : THEME.colors.primary} />
             <Text style={[styles.tabText, activeTab === 'HIGH_RISK' && styles.tabTextActive]}>
-              High-Risk ({analysis.eligibleHighRiskProducts.length})
+              High-Risk ({analysis.eligibleHighRiskProducts.length}/{allHighRiskProducts.length})
             </Text>
           </TouchableOpacity>
 
@@ -209,90 +231,162 @@ export default function InvestmentSuggestionsScreen() {
         {/* TAB A: LOW RISK PRODUCTS */}
         {activeTab === 'LOW_RISK' && (
           <View style={styles.productsList}>
-            {analysis.eligibleLowRiskProducts.map((prod) => (
-              <TouchableOpacity
-                key={prod.id}
-                style={styles.productCard}
-                onPress={() => setSelectedProduct(prod)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.productHeader}>
-                  <View style={styles.productBadgeLow}>
-                    <ShieldCheck size={12} color="#047857" />
-                    <Text style={styles.productBadgeLowText}>{prod.riskLevel} Risk</Text>
-                  </View>
-                  <Text style={styles.verifiedTag}>Verified ({prod.lastUpdatedDate})</Text>
-                </View>
+            <Text style={styles.tabSummaryHeader}>
+              🛡️ {allLowRiskProducts.length} Verified Low-Risk Products • {analysis.eligibleLowRiskProducts.length} directly eligible for your {formatINR(parsedAmount)} capital
+            </Text>
 
-                <Text style={styles.productTitle}>{prod.name}</Text>
-                <Text style={styles.productReturn}>Return: {prod.expectedReturnRate}</Text>
+            {allLowRiskProducts.map((prod) => {
+              const isEligible = parsedAmount >= prod.minInvestmentAmount;
+              return (
+                <TouchableOpacity
+                  key={prod.id}
+                  style={styles.productCard}
+                  onPress={() => setSelectedProduct(prod)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.productHeader}>
+                    <View style={styles.productBadgeLow}>
+                      <ShieldCheck size={12} color="#047857" />
+                      <Text style={styles.productBadgeLowText}>{prod.riskLevel} Risk</Text>
+                    </View>
+                    <Text style={styles.verifiedTag}>Verified ({prod.lastUpdatedDate})</Text>
+                  </View>
 
-                <View style={styles.productMetaGrid}>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>Min Investment</Text>
-                    <Text style={styles.metaVal}>{formatINR(prod.minInvestmentAmount)}</Text>
-                  </View>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>Duration</Text>
-                    <Text style={styles.metaVal}>{prod.duration}</Text>
-                  </View>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>Liquidity</Text>
-                    <Text style={styles.metaVal}>{prod.liquidity}</Text>
-                  </View>
-                </View>
+                  <Text style={styles.productTitle}>{prod.name}</Text>
+                  <Text style={styles.productReturn}>Return: {prod.expectedReturnRate}</Text>
 
-                <View style={styles.cardFooterRow}>
-                  <Text style={styles.dataSrcText}>Source: {prod.verifiedDataSource}</Text>
-                  <ChevronRight size={16} color={THEME.colors.primary} />
-                </View>
-              </TouchableOpacity>
-            ))}
+                  {/* Eligibility Badge */}
+                  <View style={{ marginBottom: 8 }}>
+                    {isEligible ? (
+                      <View style={styles.eligibleBadge}>
+                        <CheckCircle2 size={12} color="#047857" />
+                        <Text style={styles.eligibleBadgeText}>
+                          Eligible for your {formatINR(parsedAmount)} investment
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.ineligibleBadge}>
+                        <AlertTriangle size={12} color="#B45309" />
+                        <Text style={styles.ineligibleBadgeText}>
+                          Min: {formatINR(prod.minInvestmentAmount)} (Need {formatINR(prod.minInvestmentAmount - parsedAmount)} more)
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.productMetaGrid}>
+                    <View style={styles.metaCol}>
+                      <Text style={styles.metaLabel}>Min Investment</Text>
+                      <Text style={styles.metaVal}>{formatINR(prod.minInvestmentAmount)}</Text>
+                    </View>
+                    <View style={styles.metaCol}>
+                      <Text style={styles.metaLabel}>Duration</Text>
+                      <Text style={styles.metaVal}>{prod.duration}</Text>
+                    </View>
+                    <View style={styles.metaCol}>
+                      <Text style={styles.metaLabel}>Liquidity</Text>
+                      <Text style={styles.metaVal}>{prod.liquidity}</Text>
+                    </View>
+                  </View>
+
+                  {/* Lock-in and Tax considerations preview */}
+                  <View style={styles.metaExtraBox}>
+                    <Text style={styles.metaExtraText}>
+                      <Text style={{ fontWeight: '700' }}>Lock-in:</Text> {prod.lockInPeriod}
+                    </Text>
+                    <Text style={styles.metaExtraText} numberOfLines={1}>
+                      <Text style={{ fontWeight: '700' }}>Tax:</Text> {prod.taxConsiderations}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardFooterRow}>
+                    <Text style={styles.dataSrcText}>Source: {prod.verifiedDataSource}</Text>
+                    <ChevronRight size={16} color={THEME.colors.primary} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
         {/* TAB B: HIGH RISK PRODUCTS */}
         {activeTab === 'HIGH_RISK' && (
           <View style={styles.productsList}>
-            {analysis.eligibleHighRiskProducts.map((prod) => (
-              <TouchableOpacity
-                key={prod.id}
-                style={styles.productCard}
-                onPress={() => setSelectedProduct(prod)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.productHeader}>
-                  <View style={styles.productBadgeHigh}>
-                    <TrendingUp size={12} color="#B45309" />
-                    <Text style={styles.productBadgeHighText}>{prod.riskLevel} Risk</Text>
-                  </View>
-                  <Text style={styles.verifiedTag}>Verified ({prod.lastUpdatedDate})</Text>
-                </View>
+            <Text style={styles.tabSummaryHeader}>
+              📈 {allHighRiskProducts.length} Verified High-Risk Products • {analysis.eligibleHighRiskProducts.length} directly eligible for your {formatINR(parsedAmount)} capital
+            </Text>
 
-                <Text style={styles.productTitle}>{prod.name}</Text>
-                <Text style={styles.productReturn}>Expected Yield: {prod.expectedReturnRate}</Text>
+            {allHighRiskProducts.map((prod) => {
+              const isEligible = parsedAmount >= prod.minInvestmentAmount;
+              return (
+                <TouchableOpacity
+                  key={prod.id}
+                  style={styles.productCard}
+                  onPress={() => setSelectedProduct(prod)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.productHeader}>
+                    <View style={styles.productBadgeHigh}>
+                      <TrendingUp size={12} color="#B45309" />
+                      <Text style={styles.productBadgeHighText}>{prod.riskLevel} Risk</Text>
+                    </View>
+                    <Text style={styles.verifiedTag}>Verified ({prod.lastUpdatedDate})</Text>
+                  </View>
 
-                <View style={styles.productMetaGrid}>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>Min Investment</Text>
-                    <Text style={styles.metaVal}>{formatINR(prod.minInvestmentAmount)}</Text>
-                  </View>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>Duration</Text>
-                    <Text style={styles.metaVal}>{prod.duration}</Text>
-                  </View>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>Volatility Indicator</Text>
-                    <Text style={styles.metaVal}>{prod.riskPercentageOrVolatility}</Text>
-                  </View>
-                </View>
+                  <Text style={styles.productTitle}>{prod.name}</Text>
+                  <Text style={styles.productReturn}>Expected Yield: {prod.expectedReturnRate}</Text>
 
-                <View style={styles.cardFooterRow}>
-                  <Text style={styles.dataSrcText}>Source: {prod.verifiedDataSource}</Text>
-                  <ChevronRight size={16} color={THEME.colors.primary} />
-                </View>
-              </TouchableOpacity>
-            ))}
+                  {/* Eligibility Badge */}
+                  <View style={{ marginBottom: 8 }}>
+                    {isEligible ? (
+                      <View style={styles.eligibleBadge}>
+                        <CheckCircle2 size={12} color="#047857" />
+                        <Text style={styles.eligibleBadgeText}>
+                          Eligible for your {formatINR(parsedAmount)} investment
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.ineligibleBadge}>
+                        <AlertTriangle size={12} color="#B45309" />
+                        <Text style={styles.ineligibleBadgeText}>
+                          Min: {formatINR(prod.minInvestmentAmount)} (Need {formatINR(prod.minInvestmentAmount - parsedAmount)} more)
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.productMetaGrid}>
+                    <View style={styles.metaCol}>
+                      <Text style={styles.metaLabel}>Min Investment</Text>
+                      <Text style={styles.metaVal}>{formatINR(prod.minInvestmentAmount)}</Text>
+                    </View>
+                    <View style={styles.metaCol}>
+                      <Text style={styles.metaLabel}>Duration</Text>
+                      <Text style={styles.metaVal}>{prod.duration}</Text>
+                    </View>
+                    <View style={styles.metaCol}>
+                      <Text style={styles.metaLabel}>Volatility</Text>
+                      <Text style={styles.metaVal} numberOfLines={1}>{prod.riskPercentageOrVolatility}</Text>
+                    </View>
+                  </View>
+
+                  {/* Lock-in and Tax considerations preview */}
+                  <View style={styles.metaExtraBox}>
+                    <Text style={styles.metaExtraText}>
+                      <Text style={{ fontWeight: '700' }}>Lock-in:</Text> {prod.lockInPeriod}
+                    </Text>
+                    <Text style={styles.metaExtraText} numberOfLines={1}>
+                      <Text style={{ fontWeight: '700' }}>Tax:</Text> {prod.taxConsiderations}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardFooterRow}>
+                    <Text style={styles.dataSrcText}>Source: {prod.verifiedDataSource}</Text>
+                    <ChevronRight size={16} color={THEME.colors.primary} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -841,5 +935,59 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: 9,
     color: THEME.colors.textMuted,
+  },
+  tabSummaryHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+    marginBottom: 4,
+    lineHeight: 16,
+  },
+  eligibleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignSelf: 'flex-start',
+  },
+  eligibleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  ineligibleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    alignSelf: 'flex-start',
+  },
+  ineligibleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  metaExtraBox: {
+    backgroundColor: '#F8FAFC',
+    padding: 6,
+    borderRadius: 6,
+    marginBottom: 8,
+    gap: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  metaExtraText: {
+    fontSize: 9,
+    color: THEME.colors.textSecondary,
   },
 });
