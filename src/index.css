@@ -35,6 +35,29 @@
   display: none;
 }
 
+.cc-custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(118, 84, 232, 0.4) transparent;
+}
+
+.cc-custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cc-custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cc-custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(118, 84, 232, 0.35);
+  border-radius: 9999px;
+}
+
+.cc-custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(118, 84, 232, 0.65);
+}
+
 .gsi-material-button {
   -moz-user-select: none;
   -webkit-user-select: none;
