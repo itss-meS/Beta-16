@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Cpu, Upload, Zap, CheckCircle2, Smartphone, GitBranch } from 'lucide-react';
+import { Cpu, Upload, Zap, CheckCircle2, Smartphone, GitBranch, Info } from 'lucide-react';
 import type { ModelArtifactStatus } from '../types/finance';
 import { llamaClient } from '../ml/llamaClient';
 
@@ -126,6 +126,31 @@ export const LlamaRuntimeView: React.FC<LlamaRuntimeViewProps> = ({
           </div>
           <div className="font-mono text-xs text-[#1E3A8A] font-semibold">
             Engine: ExecuTorch XNNPACK + WebWorker
+          </div>
+        </div>
+
+        {/* GitHub Secrets vs Releases Guidance Notice */}
+        <div className="mt-4 p-4 rounded-xl bg-[#F0EAFE] border border-[#DDD6FE] text-xs text-[#4C1D95] space-y-2">
+          <div className="font-bold flex items-center gap-1.5 text-sm text-[#7654E8]">
+            <Info className="w-4 h-4 shrink-0" />
+            <span>How to Attach `tokenizer.model` and `.pte` Binaries</span>
+          </div>
+          <p className="leading-relaxed text-[#5B21B6]">
+            <strong>Note on GitHub Settings → Secrets:</strong> GitHub Actions Secrets are encrypted text environment variables for automated CI scripts (like API keys), <em>not</em> file storage. Web browsers and local runtime servers cannot read binary files from GitHub Actions secrets.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1 text-[11px]">
+            <div className="bg-white/80 p-2.5 rounded-lg border border-[#DDD6FE]">
+              <span className="font-bold text-[#7654E8] block mb-0.5">1. Direct Browser Upload</span>
+              Use the buttons below to select your local <code className="font-mono bg-purple-100 px-1 rounded">tokenizer.model</code> or <code className="font-mono bg-purple-100 px-1 rounded">.pte</code> directly from your computer.
+            </div>
+            <div className="bg-white/80 p-2.5 rounded-lg border border-[#DDD6FE]">
+              <span className="font-bold text-[#7654E8] block mb-0.5">2. Web Server Folder</span>
+              Place the binary files into <code className="font-mono bg-purple-100 px-1 rounded">public/models/</code> so they are automatically served at <code className="font-mono bg-purple-100 px-1 rounded">/models/</code>.
+            </div>
+            <div className="bg-white/80 p-2.5 rounded-lg border border-[#DDD6FE]">
+              <span className="font-bold text-[#7654E8] block mb-0.5">3. GitHub Releases (for APK)</span>
+              Go to GitHub repo → <strong>Releases → Draft a new release</strong>, set tag <code className="font-mono bg-purple-100 px-1 rounded">model-V1</code>, and attach both files as Release assets.
+            </div>
           </div>
         </div>
 
