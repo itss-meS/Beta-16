@@ -185,6 +185,44 @@ export const VERIFIED_INVESTMENT_PRODUCTS: InvestmentProduct[] = [
     verifiedDataSource: 'BSE / NSE Direct Equity Listing Analytics (Oct 2026)',
     lastUpdatedDate: '2026-10-25',
   },
+  {
+    id: 'prod_fixed_plan_10',
+    name: 'Fixed Savings Plan / Post Office Term Plan',
+    category: 'LOW_RISK',
+    productType: 'FIXED_SAVINGS',
+    minInvestmentAmount: 1000,
+    duration: '1 to 5 Years',
+    expectedReturnRate: '6.9% - 7.5% p.a.',
+    liquidity: 'Low to Moderate (Premature withdrawal after 6 months with interest penalty)',
+    lockInPeriod: 'Selected tenure',
+    riskLevel: 'Low',
+    riskPercentageOrVolatility: '0% Capital Risk (Sovereign / Central Govt Backed)',
+    taxConsiderations: '5-year plan eligible for Section 80C tax deduction up to ₹1.5 Lakhs',
+    pros: ['Guaranteed sovereign backing', 'Tax saving benefit on 5-year tenure', 'Higher rates than standard savings'],
+    cons: ['Strict premature withdrawal restrictions', 'Interest taxable for < 5-year options'],
+    importantWarnings: ['Premature closure before 1 year yields only standard savings account interest.'],
+    verifiedDataSource: 'India Post & Ministry of Finance National Savings Schemes (Oct 2026)',
+    lastUpdatedDate: '2026-10-01',
+  },
+  {
+    id: 'prod_hybrid_mf_11',
+    name: 'Active Hybrid & Balanced Multi-Asset Mutual Funds',
+    category: 'HIGH_RISK',
+    productType: 'MUTUAL_FUNDS',
+    minInvestmentAmount: 500,
+    duration: '3 to 5 Years',
+    expectedReturnRate: '10.5% - 13.0% p.a.',
+    liquidity: 'High (T+2 business days)',
+    lockInPeriod: 'None',
+    riskLevel: 'Moderate to High',
+    riskPercentageOrVolatility: 'Moderate (Standard Deviation ~11.5% due to dynamic debt buffer)',
+    taxConsiderations: 'Equity-oriented hybrid funds taxed as equity (LTCG 12.5% > ₹1.25 Lakhs)',
+    pros: ['Automatic asset rebalancing between equity and debt', 'Lower downside volatility during market dips'],
+    cons: ['May lag pure equity during strong bull markets'],
+    importantWarnings: ['Check portfolio equity proportion to understand effective tax treatment.'],
+    verifiedDataSource: 'AMFI Hybrid Fund Performance Data (Oct 2026)',
+    lastUpdatedDate: '2026-10-20',
+  },
 ];
 
 /**
@@ -223,11 +261,11 @@ export function analyzeInvestmentSuggestions(
 
   // Filter products matching amount eligibility
   const eligibleLowRiskProducts = VERIFIED_INVESTMENT_PRODUCTS.filter(
-    (p) => p.category === 'LOW_RISK' && p.minInvestmentAmount <= Math.max(amount, 500)
+    (p) => p.category === 'LOW_RISK' && (amount === 0 || p.minInvestmentAmount <= Math.max(amount, 500))
   );
 
   const eligibleHighRiskProducts = VERIFIED_INVESTMENT_PRODUCTS.filter(
-    (p) => p.category === 'HIGH_RISK' && p.minInvestmentAmount <= Math.max(amount, 500)
+    (p) => p.category === 'HIGH_RISK' && (amount === 0 || p.minInvestmentAmount <= Math.max(amount, 500))
   );
 
   // Personalized Strategy Allocation
